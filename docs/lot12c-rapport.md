@@ -461,6 +461,10 @@ Sur un projet où les migrations du lot sont appliquées, service des commandes 
 
 ## Autres idées
 
+Liste du rapport du lot, gardée telle quelle : la revue après un changement de la liste, le mode comptoir, la rupture
+en un geste, le rappel sonore et l'archive avec « Remettre en vente » sont **faits aux correctifs** (section en tête, avec
+les nouvelles idées classées par valeur).
+
 - **Revue de la carte après un changement de la liste des mots** : un bouton « Revoir les produits existants » dans la
   page de l'administration (aujourd'hui seuls les produits enregistrés ensuite sont comparés : `docs/apres-lancement.md`).
 - **Mode comptoir** plein écran de l'écran des commandes (sans menu, grands boutons, écran gardé allumé par l'API Wake
