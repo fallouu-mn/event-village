@@ -5,8 +5,7 @@
  *     du jour et portions, épuisé, indisponible, réglementé affiché avec son prix et jamais commandable, zones, tables),
  *     aucun champ interne, aucune photo extérieure ; rien pour une partenaire suspendue, un établissement suspendu, non
  *     ouvert à la commande, un identifiant partiel ou inconnu, ni service fermé (404).
- *  B. REST des produits avec la clé anon : produits, suppléments et portions d'un établissement listé seulement ; rien d'une
- *     partenaire suspendue, d'un établissement suspendu ni d'un produit sans établissement ; la propriétaire lit les siens.
+ *  B. REST des produits : suite à part, tests/parcours/l12b-produits-rest.test.ts.
  *  C. Code de remise visible (GET /api/orders/[id]/code) : le code du SMS, pour le client de la commande seulement (autre
  *     client, partenaire, livreur : 404) ; jamais dans une autre réponse ; sans cache ; nouveau code → le nouveau ; effacé
  *     à la remise et à la fin ; tables private fermées à la clé de service.
@@ -25,7 +24,6 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { assertLot12aInvariants } from '../helpers/lot12a-invariants';
 import { openConcurrentClient } from '../helpers/db';
 import { BASE_URL } from './helpers';
@@ -43,7 +41,7 @@ import { decideVenue, newTable } from './l11a-helpers';
 import {
     addCourier, codeOf, courierAct, dailySpecialWindowClosed, n, newBuyer, newDeliveryZone, newOption, newPartner, newProduct, newShop,
     openOrdersService, order, orderBody, partnerAct, payOrder, placed, platformSetting, releaseUnpaid, service, setPlatformSetting,
-    setPortions, shiftOrder, startOrderPay, superadminId, toReady, userClient, type Buyer, type Row, type TestPartner,
+    setPortions, shiftOrder, startOrderPay, superadminId, toReady, type Buyer, type Row, type TestPartner,
 } from './l12a-helpers';
 import { deliverWebhook, providerSays } from './paiement-helpers';
 
@@ -99,7 +97,6 @@ const quote = async (who: Buyer, body: Row) => reply(await quoteRoute(req('/api/
 const create = async (who: Buyer, body: Row, key?: string) =>
     reply(await createRoute(req('/api/orders/create', 'POST', who.accessToken, body, key ? { 'idempotency-key': key } : {})));
 const revealCode = async (who: Buyer, id: string) => reply(await codeGet(req(`/api/orders/${id}/code`, 'GET', who.accessToken), ctx(id)));
-const anon = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
 
 async function sql<T extends Row = Row>(text: string, params: unknown[] = []): Promise<T[]> {
     const c = await openConcurrentClient({ applicationName: 'ev-test-l12b-sql' });
@@ -227,44 +224,7 @@ describe('A. Carte des plats publique', () => {
     });
 });
 
-// ── B. REST des produits ──────────────────────────────────────────────────────────────────────────────────────────
-
-describe('B. REST des produits (clé anon)', () => {
-    test('établissement listé seulement ; rien d’une partenaire suspendue, d’un établissement suspendu ni sans établissement ; la propriétaire lit les siens', async () => {
-        const listed = await newProduct(partner, shop, { price: 1_000, name: 'Listé l12b' });
-        const listedOpt = await newOption(listed, 'Sauce', 100);
-        const suspendedShop = await newShop(partner);
-        const inSuspended = await newProduct(partner, suspendedShop, { price: 1_000, name: 'Établissement suspendu l12b' });
-        const optSuspended = await newOption(inSuspended, 'Sauce', 100);
-        assert.equal((await decideVenue(suspendedShop, 'SUSPENDRE', 'Contrôle d’hygiène en cours.')).ok, true);
-        const { data: legacy, error: legErr } = await service.from('products').insert({ partner_id: partner.partnerId, name: 'Sans établissement l12b', price: 900, status: 'DISPONIBLE' }).select('id').single();
-        assert.equal(legErr, null, legErr?.message);
-        const other = await newPartner('l12b-rest');
-        const otherShop = await newShop(other);
-        const ofSuspended = await newProduct(other, otherShop, { price: 1_000, name: 'Partenaire suspendue l12b', daily: true });
-        await setPortions(other, ofSuspended, 5);
-        await setPartnerStatus(other, 'SUSPENDU');
-        try {
-            const a = anon();
-            const ids = [listed, inSuspended, String(legacy!.id), ofSuspended];
-            const { data: prods, error } = await a.from('products').select('id').in('id', ids);
-            assert.equal(error, null, error?.message);
-            assert.deepEqual((prods ?? []).map((p) => p.id), [listed], 'seul le produit d’un établissement listé');
-            const { data: opts } = await a.from('product_options').select('id').in('id', [listedOpt, optSuspended]);
-            assert.deepEqual((opts ?? []).map((o) => o.id), [listedOpt]);
-            const { data: portions } = await a.from('product_daily_portions').select('product_id').eq('product_id', ofSuspended);
-            assert.deepEqual(portions ?? [], [], 'portions d’une partenaire suspendue');
-            // Autre compte connecté : même chose
-            const { data: asStranger } = await userClient(stranger.accessToken).from('products').select('id').in('id', ids);
-            assert.deepEqual((asStranger ?? []).map((p) => p.id), [listed]);
-            // Propriétaire : ses produits, établissement suspendu compris
-            const { data: mine } = await userClient(partner.accessToken).from('products').select('id').in('id', [listed, inSuspended, String(legacy!.id)]);
-            assert.deepEqual((mine ?? []).map((p) => p.id).sort(), [listed, inSuspended, String(legacy!.id)].sort());
-        } finally {
-            await setPartnerStatus(other, 'VALIDE');
-        }
-    });
-});
+// B. REST des produits : tests/parcours/l12b-produits-rest.test.ts (suite à part, prouvée rouge sur main)
 
 // ── C. Code de remise visible ─────────────────────────────────────────────────────────────────────────────────────
 
