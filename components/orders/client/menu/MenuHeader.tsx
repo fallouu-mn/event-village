@@ -27,7 +27,12 @@ export function MenuHeader({ menu }: { menu: VenueMenu }) {
             <div className="space-y-3 p-4 sm:p-6">
                 <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="brand">{KIND_LABELS[venue.kind] ?? 'Établissement'}</Badge>
-                    <Badge variant={hours.open ? 'success' : 'neutral'}>{hours.open ? 'Ouvert maintenant' : 'Fermé en ce moment'}</Badge>
+                    {menu.ordering.closedUntil ? (
+                        // Fermeture exceptionnelle en cours (servie par la base) : jamais « Ouvert maintenant » à côté du bandeau
+                        <Badge variant="warning">Fermé exceptionnellement</Badge>
+                    ) : (
+                        <Badge variant={hours.open ? 'success' : 'neutral'}>{hours.open ? 'Ouvert maintenant' : 'Fermé en ce moment'}</Badge>
+                    )}
                 </div>
                 <h1 className="break-words text-3xl font-extrabold leading-tight tracking-tight text-foreground-strong sm:text-4xl">{venue.name}</h1>
                 {venue.description && <p className="max-w-2xl text-base leading-relaxed text-muted-foreground">{venue.description}</p>}

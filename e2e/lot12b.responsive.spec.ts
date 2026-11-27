@@ -392,7 +392,7 @@ for (const theme of THEMES) {
                     await expect(balance.getByTestId('paiement-solde')).toBeVisible({ timeout: 30_000 });
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'solde depuis l’avis');
-                    await shot(page, 'solde-depuis-avis', w.width, theme.key);
+                    await shot(page, 'solde-depuis-avis', w.width, theme.key, false); // écran visible : le panneau amené à l'écran (en-tête fixe)
 
                     // 11. Mes commandes (heure estimée rappelée pour la commande en cours : idée 10)
                     await page.goto('/orders', { waitUntil: 'load' });
@@ -416,6 +416,7 @@ for (const theme of THEMES) {
                         // Carte alignée sur le devis du 12c : premier créneau = fin de la fermeture + préparation (25 min) → 18 h 25 ;
                         // au quart d'heure : 18 h 30
                         await expect(page.getByTestId('fermeture-exceptionnelle').first()).toContainText('Premier créneau proposé : Demain à 18 h 30');
+                        await expect(page.getByText('Ouvert maintenant', { exact: true })).toHaveCount(0);
                         await settle(page);
                         await checkLayout(page, w.width, w.phone, 'fermeture exceptionnelle');
                         await shot(page, 'fermeture', w.width, theme.key, false);

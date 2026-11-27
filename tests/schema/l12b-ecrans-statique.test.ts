@@ -162,6 +162,7 @@ describe('Lot 12b, correctifs après contre-vérification — idées 8 à 13 (co
         assert.match(sql, /range_agg\(tsrange\(c\.starts_at, c\.ends_at \+ make_interval\(mins => v_prep\), '\[\)'\)\)/);
         assert.match(sql, /venue_closed_during\(v\.id, tsrange\(v_now, v_now \+ make_interval\(mins => v_prep \+ 2\), '\[\)'\)\)/);
         assert.match(code('components/orders/client/menu/MenuView.tsx'), /closureText\(menu\.ordering\.closedUntil, today\)/);
+        assert.match(code('components/orders/client/menu/MenuHeader.tsx'), /menu\.ordering\.closedUntil \? \(\s*<Badge variant="warning">Fermé exceptionnellement<\/Badge>/, 'jamais « Ouvert maintenant » pendant une fermeture');
     });
 
     test('10. heure estimée avant de payer et dans Mes commandes : « Prête vers 13 h 05 », « Livrée vers 13 h 25 » (heure de la base)', async () => {
