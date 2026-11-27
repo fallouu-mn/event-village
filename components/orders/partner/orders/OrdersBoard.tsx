@@ -23,7 +23,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom';
 import { BellRing, Bike, ClipboardList, LogOut, MonitorSmartphone, Volume2, VolumeX, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -110,6 +109,55 @@ function useWideScreen(): boolean | null {
         return () => mq.removeEventListener('change', sync);
     }, []);
     return wide;
+}
+
+/**
+ * Mode comptoir : fenêtre native plein écran (<dialog>, comme le QR en grand des billets) qui défile elle-même. Le
+ * navigateur garde le focus dedans, Échap la ferme ; le focus revient au bouton qui l'a ouverte. Run 749 : la fenêtre
+ * plein écran du système de design coupe ce qui dépasse (corps sans défilement propre).
+ */
+function CounterDialog({ open, onClose, subtitle, children }: { open: boolean; onClose: () => void; subtitle: string; children: React.ReactNode }) {
+    const ref = useRef<HTMLDialogElement>(null);
+    const closeRef = useRef(onClose);
+    closeRef.current = onClose;
+    useEffect(() => {
+        const dialog = ref.current;
+        if (!dialog || !open) return undefined;
+        const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
+        const onCancel = (e: Event) => {
+            e.preventDefault();
+            closeRef.current();
+        };
+        dialog.addEventListener('cancel', onCancel);
+        return () => {
+            dialog.removeEventListener('cancel', onCancel);
+            if (dialog.open) dialog.close();
+            returnFocus?.focus();
+        };
+    }, [open]);
+    return (
+        <dialog
+            ref={ref}
+            aria-labelledby="comptoir-titre"
+            className="m-0 h-dvh max-h-none w-screen max-w-none overflow-y-auto overscroll-contain border-0 bg-background p-0 text-foreground backdrop:bg-scrim/60"
+        >
+            {open && (
+                <>
+                    <header className="flex items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
+                            <MonitorSmartphone size={20} />
+                        </span>
+                        <div className="min-w-0">
+                            <h2 id="comptoir-titre" className="text-lg font-bold text-foreground-strong">Mode comptoir</h2>
+                            <p className="text-sm text-muted-foreground">{subtitle}</p>
+                        </div>
+                    </header>
+                    {children}
+                </>
+            )}
+        </dialog>
+    );
 }
 
 export function OrdersBoard() {
@@ -376,18 +424,14 @@ export function OrdersBoard() {
                 )}
             </TabPanel>
 
-            <Modal
-                isOpen={counter}
+            <CounterDialog
+                open={counter}
                 onClose={leaveCounter}
-                fullScreen
-                title="Mode comptoir"
                 subtitle={open.online
                     ? (open.updatedAt ? `Mis à jour à ${formatTime(open.updatedAt)}${sound.enabled ? '' : ' · son coupé'}` : 'Chargement des commandes…')
                     : 'Hors ligne : l’écran se remet à jour au retour du réseau'}
-                icon={<MonitorSmartphone size={20} aria-hidden="true" />}
             >
-                {/* Zone qui défile dans le corps de la fenêtre (corps sans défilement propre en plein écran) : run 746 */}
-                <div className="absolute inset-0 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
+                <div className="space-y-4 p-4 sm:p-6">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         {wake === 'unavailable' ? (
                             <p className="text-base text-warning-text" role="status">
@@ -424,7 +468,7 @@ export function OrdersBoard() {
                         renderBoard(true)
                     )}
                 </div>
-            </Modal>
+            </CounterDialog>
 
             <TabPanel idPrefix="commandes-vue" tabIdValue="terminees" className={view === 'terminees' ? '' : 'hidden'}>
                 {view !== 'terminees' ? null : closed.loading && !closed.data ? (
