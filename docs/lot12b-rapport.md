@@ -1,8 +1,14 @@
 # Lot 12b — Commandes : écrans du client
 
+**Fusionné dans main (`2a02223f1`), run complet de main 782 vert** (27/11, 2e tentative : 645 suites sur 645, e2e 783
+passés, responsive 249 passés et 0 défaut, budgets tenus, mesure mobile valide à la première tentative : accueil 94,
+fiche 93, Mes billets 93, toucher 88 ms ; la 1re tentative n'avait pas pu mesurer : machine de la CI trop rapide aux
+15 tours, indice 3 028 à 3 632, aucune conclusion, tout le reste vert). Migrations non appliquées : Fallou les applique
+sur event-village-dev (liste dans « Correctifs après contre-vérification »).
+
 Branche `lot12b/client` (depuis main `5b7f3399ca`, lot 11c-b fusionné ; puis main fusionné : lot 12c `85a1c85f57`, ajout
-« fermeture » du 12c `b52a9c255e`, documentation `2a65f5e55d`), worktree `event-village-lot12b`. **Non fusionnée ;
-aucune migration appliquée.** Service toujours fermé par `features.orders_enabled` (les tests l'ouvrent le temps de leur
+« fermeture » du 12c `b52a9c255e`, documentation `2a65f5e55d`), worktree `event-village-lot12b`. Fusionnée dans main
+le 27/11 (`2a02223f1`) ; aucune migration appliquée. Service toujours fermé par `features.orders_enabled` (les tests l'ouvrent le temps de leur
 passage).
 
 **État des correctifs après contre-vérification (27/11)** : T1, T2 et T3 verts (runs 777 et 779) ; run complet **779**
