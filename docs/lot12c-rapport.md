@@ -116,7 +116,7 @@ Liens : commande du client `/orders/<id>`, de la partenaire `/partner/orders/<id
 | `tests/parcours/l12c-catalogue.test.ts` L | 4 migrations du lot | 5 | migration 20261224000005 |
 | `tests/parcours/l12c-statique.test.ts` S1 | 4 recopies | 5 (`order_daily_portions_set`, depuis `M/20261130000002`) | T6, point 12 |
 | `tests/parcours/notif-modeles.test.ts`, `notif-outbox.test.ts` (table G2, textes exacts G3) | — | 8 types ajoutés (lignes G2), 16 textes SMS exacts | avis ajoutés ; aucune assertion existante changée |
-| `docs/recette-billetterie.md` (lignes citées) | `notif-modeles.test.ts:582` ; `email-regle-envoi.test.ts:118`, `:312`, `:533` | `:591` ; `:121`, `:315`, `:536` | lignes ajoutées avant les tests cités (`recette-matrice` vert en local et au run 757) |
+| `docs/recette-billetterie.md` (lignes citées) | `notif-modeles.test.ts:582` ; `email-regle-envoi.test.ts:118`, `:312`, `:533` | `:591` ; `:121`, `:315`, `:536` | lignes ajoutées avant les tests cités (`recette-matrice` et `email-regle-envoi` verts au run 758) |
 | `tests/parcours/email-regle-envoi.test.ts` (G.49, `G49_EXCLUDED`) | `PUSH_TEST`, `COUNTER_RECEIPT`, `ADMIN_REVIEW_SMS` | + `PRODUCT_DECISION_SMS`, `ADMIN_ORDER_REFUND_BLOCKED` | SMS qui doublent un avis qui a déjà son email (même raison qu'`ADMIN_REVIEW_SMS`, lot 9 quinquies) ; un email de plus serait un doublon |
 | `tests/schema/f5-liens-avis.test.ts` (`SANS_OBJET`) | — | + `ADMIN_ORDER_REFUND_BLOCKED` : file « Versements à reprendre » | même lien et même raison qu'`ADMIN_REFUND_TO_RETRY` (aucune fiche par versement) |
 
@@ -144,6 +144,7 @@ une ligne à chaque largeur, produits archivés, onglet « Mettre à vérifier �
 | 751 | 519815214e | rapide, 1 suite + responsive + captures | **vert** : 0 défaut bloquant, spec du lot vert dans les deux thèmes, 84 captures |
 | **753** | **eb0a6a25a2** | **complet** (branche à jour avec `origin/main`) | qualité, e2e, responsive (0 défaut bloquant), budgets et mesure mobile **verts** ; tests **635/638**. Rouges, règles du catalogue des avis : `email-regle-envoi` (G.49 : tout avis indispensable déclare l'email), `f5-liens-avis` (lien vers l'objet exact) pour les deux types SMS qui doublent un avis, et `textes-sms-9bis` (« .... » dans le rappel client, déjà corrigé localement) |
 | 754 | b485b9e1c8 | rapide : les 3 suites rouges + `notif-modeles`, `notif-outbox`, `l12c-cv-correctifs`, `cv12c-3`, `cv12a-3` | **vert** : 8/8, typage et lint ; avec le run complet 753, plus aucune suite rouge |
+| 758 | af6e899270 | rapide : `recette-matrice`, `email-regle-envoi` (lignes citées par la recette décalées par l'exception G.49) | **vert** : 2/2 |
 
 ### Poids JavaScript et mesure mobile, avant et après
 
