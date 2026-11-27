@@ -16,6 +16,9 @@ export const dynamic = 'force-dynamic';
  *  - adresse, téléphone et consignes du client masqués 7 jours après la remise (ou la fin de la commande).
  * Les remboursements créés sont envoyés tout de suite (repris sinon par la tâche des versements, qui ne relance jamais un
  * versement incertain).
+ * Contre-vérification du lot 12c : puis order_reminders (idempotente, une fois par commande et par rappel) : rappel à la
+ * partenaire 5 min avant la fin du délai de réponse, début de préparation d'une commande programmée, rappel au client
+ * 1 h avant une commande programmée un autre jour. Un échec des rappels n'empêche pas le reste (journalisé).
  */
 export async function GET(req: NextRequest) {
     return handleCron(req);
@@ -34,9 +37,18 @@ async function handleCron(req: NextRequest) {
         const r = data as { expired_holds: number; unanswered: number; pickup_warnings: number; not_collected: number; contacts_masked: number; cashout_ids: string[] };
         await sendOrderRefunds(r.cashout_ids);
         console.log(`[Cron Commandes] ${r.expired_holds} attente(s) échue(s), ${r.unanswered} sans réponse, ${r.pickup_warnings} rappel(s) de retrait, ${r.not_collected} non retirée(s), ${r.contacts_masked} coordonnée(s) masquée(s).`);
+        const reminders = await getServiceRoleClient().rpc('order_reminders', { p: {} });
+        const rem = (reminders.data ?? {}) as { response_reminders?: number; prep_reminders?: number; scheduled_reminders?: number };
+        if (reminders.error) {
+            console.error('[Cron Commandes] rappels :', reminders.error.message);
+        } else {
+            console.log(`[Cron Commandes] rappels : ${rem.response_reminders ?? 0} réponse(s), ${rem.prep_reminders ?? 0} préparation(s), ${rem.scheduled_reminders ?? 0} client(s).`);
+        }
         return NextResponse.json({
             success: true, expiredHolds: r.expired_holds, unanswered: r.unanswered, pickupWarnings: r.pickup_warnings,
             notCollected: r.not_collected, contactsMasked: r.contacts_masked,
+            responseReminders: rem.response_reminders ?? 0, prepReminders: rem.prep_reminders ?? 0, scheduledReminders: rem.scheduled_reminders ?? 0,
+            remindersFailed: reminders.error ? true : undefined,
         });
     } catch (err: unknown) {
         console.error('[Cron Commandes] erreur :', err instanceof Error ? err.message : String(err));

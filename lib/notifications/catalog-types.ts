@@ -226,9 +226,19 @@ export interface TemplateData {
     ORDER_COURIER_ASSIGNED: OrderNotifData;
     ORDER_COURIER_CANCELLED: OrderNotifData;
     ORDER_COURIER_INVITED: { invitation_id: string; partner_name?: string | null };
+    // Contre-vérification du lot 12c (point 7) : code bloqué, rappels, commande prête pour le livreur
+    ORDER_CODE_LOCKED: OrderNotifData;
+    ORDER_RESPONSE_REMINDER: OrderNotifData;
+    ORDER_PREP_REMINDER: OrderNotifData;
+    ORDER_READY_COURIER: OrderNotifData;
+    ORDER_SCHEDULED_REMINDER: OrderNotifData;
     // Lot 12c : produit « à vérifier » (order_product_save, product_option_set) et décision (order_product_regulation_decide)
     ADMIN_PRODUCT_REVIEW: { product_id: string; product_name: string; venue_name?: string | null; company?: string | null; words: string[] };
-    PRODUCT_REVIEW_DECIDED: { product_id: string; product_name: string; decision: 'AUTORISE' | 'REFUSE' | string; reason?: string | null; partner_box?: boolean };
+    PRODUCT_REVIEW_DECIDED: { product_id: string; product_name: string; decision: 'AUTORISE' | 'REFUSE' | 'A_VERIFIER' | string; reason?: string | null; partner_box?: boolean };
+    // Contre-vérification du lot 12c : décision par SMS, remboursement de commande bloqué (SMS), revue groupée
+    PRODUCT_DECISION_SMS: { product_id: string; product_name: string; decision: 'AUTORISE' | 'REFUSE' | string; partner_box?: boolean };
+    ADMIN_ORDER_REFUND_BLOCKED: { cashout_id: string; amount: number; order_number: string; cashout_status: 'BLOQUE' | 'ECHOUE' | 'INCERTAIN' | string };
+    ADMIN_PRODUCTS_REVIEW_BATCH: { count: number; origin: 'LISTE' | 'CATEGORIE' | 'MIGRATION' | string };
     PROMOTION_DECIDED: EventData & { promotion_id: string; status: 'APPROUVEE' | 'REFUSEE' | string; reason?: string | null };
     CONTROLLER_ASSIGNED: Partial<EventData> & { assignment_id?: string; entry_point: string | null; can_accept_cash: boolean; events?: ControllerEventRef[] };
     CONTROLLER_UNASSIGNED: Partial<EventData> & { assignment_id?: string; events?: ControllerEventRef[] };

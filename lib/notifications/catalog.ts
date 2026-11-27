@@ -2066,6 +2066,72 @@ const CATALOG = {
         },
         sample: { invitation_id: SAMPLE_ID.invitation, partner_name: 'Chez Fatou, cuisine du Sénégal et grillades' },
     }),
+    // Contre-vérification du lot 12c (point 7, P1 à P4 et P7 de l'audit) : avis de commande ajoutés, 4 canaux, SMS d'un
+    // segment au pire cas ; chaque avis mène à la commande concernée et dit quoi faire.
+    ORDER_CODE_LOCKED: define('ORDER_CODE_LOCKED', {
+        label: 'Code de remise bloqué', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Code de remise bloqué',
+            content: `Le code de remise de la commande ${orderRef(d)} a été mal saisi trop de fois : il ne fonctionne plus. Ouvrez la commande, demandez un nouveau code et donnez-le à la remise.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}code de remise de la commande ${orderRef(d)} bloqué après trop d'essais. Demandez un nouveau code dans l'application.`,
+        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE' },
+    }),
+    ORDER_RESPONSE_REMINDER: define('ORDER_RESPONSE_REMINDER', {
+        label: 'Commande sans réponse', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => ({
+            title: 'Commande sans réponse',
+            content: `La commande ${orderRef(d)} chez ${venueName(d)} attend votre réponse. Acceptez-la ou refusez-la avant ${formatTime(iso(d, 'response_due_at'))} : sans réponse, elle est annulée et le client remboursé.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} toujours sans réponse. Acceptez-la ou refusez-la avant ${smsTime(iso(d, 'response_due_at'))}, sinon elle sera annulée.`,
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER' },
+    }),
+    ORDER_PREP_REMINDER: define('ORDER_PREP_REMINDER', {
+        label: 'Commande programmée à préparer', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => ({
+            title: 'Commande à préparer',
+            content: `La commande ${orderRef(d)} chez ${venueName(d)} est prévue à ${formatTime(iso(d, 'scheduled_for'))} : lancez sa préparation maintenant. ${orderModeText(d)}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} prévue à ${smsTime(iso(d, 'scheduled_for'))} : lancez sa préparation maintenant.`,
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', state: 'ACCEPTEE' },
+    }),
+    ORDER_READY_COURIER: define('ORDER_READY_COURIER', {
+        label: 'Commande prête à livrer', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: courierOrderLink,
+        inApp: (d) => {
+            const zone = optText(d, 'zone_name');
+            return {
+                title: 'Commande prête à livrer',
+                content: `La commande ${orderRef(d)} est prête chez ${venueName(d)}${zone ? ` (zone ${zone})` : ''} : passez la prendre. À la remise, demandez son code au client.`,
+            };
+        },
+        // GSM-7 : pas de « ê » (prête) dans le SMS
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} à récupérer chez ${smsVar(text(d, 'venue_name'), 30)} pour la livrer. Adresse dans l'application.`,
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER', state: 'PRETE' },
+    }),
+    ORDER_SCHEDULED_REMINDER: define('ORDER_SCHEDULED_REMINDER', {
+        label: 'Commande programmée bientôt', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const mode = text(d, 'mode');
+            const hint = mode === 'LIVRAISON' ? 'Gardez votre téléphone près de vous et votre code de remise prêt.'
+                : mode === 'RETRAIT' ? 'Pensez à votre code de remise pour la retirer.'
+                    : 'Présentez-vous à l’heure : elle vous sera servie sur place.';
+            return {
+                title: 'Votre commande approche',
+                content: `Votre commande ${orderRef(d)} chez ${venueName(d)} est prévue à ${formatTime(iso(d, 'scheduled_for'))}. ${hint}`,
+            };
+        },
+        sms: (d) => {
+            const mode = text(d, 'mode');
+            const hint = mode === 'LIVRAISON' ? 'Gardez votre téléphone près de vous.' : mode === 'RETRAIT' ? 'Pensez à votre code de remise.' : 'Elle vous sera servie sur place.';
+            return `${SMS_PREFIX}rappel, commande ${orderRef(d)} prévue à ${smsTime(iso(d, 'scheduled_for'))} chez ${smsVar(text(d, 'venue_name'), 30)}. ${hint}`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, state: 'ACCEPTEE' },
+    }),
     // Lot 12c : produit « à vérifier » (un mot de la liste dans son nom, sa description ou un supplément) : administrateurs
     // qui ont partners.validate, cloche et email ; décision envoyée à la partenaire (cloche, notification du téléphone, email)
     ADMIN_PRODUCT_REVIEW: define('ADMIN_PRODUCT_REVIEW', {
@@ -2088,6 +2154,10 @@ const CATALOG = {
         inApp: (d) => {
             const name = q(text(d, 'product_name'));
             const reason = optText(d, 'reason');
+            // Contre-vérification du lot 12c (T3) : produit mis « à vérifier » par l'administration (motif)
+            if (text(d, 'decision') === 'A_VERIFIER') {
+                return { title: 'Produit en vérification', content: `${name} est en vérification par Event Village : il ne se commande plus en ligne jusqu’à la décision.${reason ? ` Motif : ${sentence(reason)}` : ''} Il reste affiché avec son prix sur votre carte.` };
+            }
             if (text(d, 'decision') === 'AUTORISE') {
                 return field(d, 'partner_box') === true
                     ? { title: 'Produit vérifié', content: `${name} est vérifié par Event Village. Vous l’avez marqué « réglementé » : il reste affiché avec son prix, sans vente en ligne, tant que la case est cochée.` }
@@ -2096,6 +2166,57 @@ const CATALOG = {
             return { title: 'Produit non vendu en ligne', content: `${name} n’est pas autorisé à la vente en ligne.${reason ? ` Motif : ${sentence(reason)}` : ''} Il reste affiché avec son prix sur votre carte : vos clients l’achètent sur place.` };
         },
         sample: { product_id: SAMPLE_ID.reservation, product_name: 'Bissap maison et bière locale en bouteille de 65 cl', decision: 'REFUSE', reason: 'Boisson alcoolisée : vente en ligne interdite.', partner_box: false },
+    }),
+    // Contre-vérification du lot 12c (point 7, P5) : la décision aussi par SMS (type à part : PRODUCT_REVIEW_DECIDED n'a
+    // pas de SMS) ; reportée la nuit
+    PRODUCT_DECISION_SMS: define('PRODUCT_DECISION_SMS', {
+        label: 'SMS : produit vérifié', channels: ['SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: null,
+        link: (d) => `/partner/products/${ident(d, 'product_id')}`,
+        sms: (d) => {
+            const name = smsVar(text(d, 'product_name'), 40);
+            const decision = text(d, 'decision');
+            if (decision === 'AUTORISE') {
+                return field(d, 'partner_box') === true
+                    ? `${SMS_PREFIX}produit "${name}" vérifié. Marqué réglementé par vous, il reste sans vente en ligne.`
+                    : `${SMS_PREFIX}produit "${name}" vérifié : il se commande en ligne.`;
+            }
+            if (decision === 'REFUSE') return `${SMS_PREFIX}produit "${name}" non autorisé à la vente en ligne. Motif dans l'application.`;
+            throw new TemplateDataError('decision', 'inconnue (AUTORISE ou REFUSE attendu)');
+        },
+        sample: { product_id: SAMPLE_ID.reservation, product_name: 'Bissap maison et bière locale en bouteille de 65 cl', decision: 'REFUSE', partner_box: false },
+    }),
+    // Contre-vérification du lot 12c (point 7, P6) : remboursement d'une commande bloqué, refusé ou incertain, SMS aux
+    // administrateurs refunds.manage (la cloche, le téléphone et l'email partent déjà) ; reporté la nuit
+    ADMIN_ORDER_REFUND_BLOCKED: define('ADMIN_ORDER_REFUND_BLOCKED', {
+        label: 'SMS : remboursement de commande à reprendre', channels: ['SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'refunds.manage', inAppType: null,
+        link: () => '/admin/finance#versements-a-reprendre',
+        sms: (d) => {
+            const status = text(d, 'cashout_status');
+            const head = `${SMS_PREFIX}remboursement de ${smsAmount(num(d, 'amount'))} de la commande ${orderRef(d)}`;
+            if (status === 'BLOQUE') return `${head} bloqué. Reprenez-le depuis les finances.`;
+            if (status === 'ECHOUE') return `${head} refusé par l'opérateur. Reprenez-le depuis les finances.`;
+            if (status === 'INCERTAIN') return `${head} sans réponse de l'opérateur. Vérifiez-le avant toute reprise.`;
+            throw new TemplateDataError('cashout_status', 'inconnu (BLOQUE, ECHOUE ou INCERTAIN attendu)');
+        },
+        sample: { cashout_id: SAMPLE_ID.cashout, amount: 1_312_500, order_number: 'CMD-261205-A1B2C3', cashout_status: 'BLOQUE' },
+    }),
+    // Contre-vérification du lot 12c (T3) : revue groupée des produits déjà enregistrés (liste des mots changée, catégorie
+    // renommée, mise à jour) : un seul avis aux administrateurs partners.validate
+    ADMIN_PRODUCTS_REVIEW_BATCH: define('ADMIN_PRODUCTS_REVIEW_BATCH', {
+        label: 'Produits déjà en vente à vérifier', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
+        link: () => '/admin/products',
+        inApp: (d) => {
+            const n = count(d, 'count');
+            const origin = text(d, 'origin');
+            const why = origin === 'LISTE' ? 'la liste des mots a changé'
+                : origin === 'CATEGORIE' ? 'une catégorie a été renommée avec un mot de la liste'
+                    : 'les produits enregistrés avant la mise à jour ont été relus';
+            return {
+                title: 'Produits à vérifier',
+                content: `${plural(n, 'produit déjà en vente est', 'produits déjà en vente sont')} à vérifier : ${why}. Ils ne se commandent plus en ligne tant que vous ne les avez pas autorisés ou refusés.`,
+            };
+        },
+        sample: { count: 12, origin: 'LISTE' },
     }),
     ADMIN_VENUE_SUBMITTED: define('ADMIN_VENUE_SUBMITTED', {
         label: 'Établissement à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'halls.validate', inAppType: 'ADMIN_REVIEW',
