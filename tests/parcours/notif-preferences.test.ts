@@ -52,7 +52,9 @@ type Channel = (typeof CHANNELS)[number];
 const CHANNEL_LABELS: Record<Channel, string> = { IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notifications push' };
 const TOPIC_LABELS: Record<string, string> = {
     REMINDERS: "Rappels avant l'événement",
-    EVENT_UPDATES: "Suspension et reprise d'un événement", // lot 9 bis (R14, T54) : la date et le lieu deviennent indispensables
+    // Lot « Avis », phase 2 (B13 ; modification signalée au rapport) : la suspension devient indispensable. Avant :
+    // « Suspension et reprise d'un événement ».
+    EVENT_UPDATES: "Reprise d'un événement", // lot 9 bis (R14, T54) : la date et le lieu deviennent indispensables
     PRO_ACTIVITY: 'Activité de vos ventes',
     // Finition 4 (décision du client du 19/11, ajout signalé au rapport)
     AFTER_EVENT: "Après l'événement",
@@ -60,6 +62,7 @@ const TOPIC_LABELS: Record<string, string> = {
 };
 const ESSENTIALS = [
     'Codes de connexion', "Confirmations d'achat et reçus", 'Billets transférés', 'Annulations', 'Remboursements', 'Sécurité du compte', 'Changements de date ou de lieu', // lot 9 bis (R14, T54)
+    "Suspension d'un événement", // lot « Avis », phase 2 (B13, ajout signalé au rapport)
 ];
 const NO_DEVICE_ERROR = "Activez d'abord les notifications sur cet appareil.";
 const TEST_PUSH_MESSAGE = "Notification d'essai envoyée : elle arrive dans la minute.";

@@ -24,6 +24,7 @@ const LAST_OF_MAIN = '20261226000003_l12b_garde_prix.sql';
 const FILES = [
     '20261230000001_avis_titulaires_table.sql',
     '20261230000002_avis_nouveaux_simples.sql',
+    '20261230000003_avis_canaux.sql',
 ];
 
 /** Recopies du lot : fonction → dernière définition de main (fichier, première et dernière ligne) et migration du lot. */
@@ -32,6 +33,7 @@ const RECOPIES: Record<string, { from: string; lines: [number, number]; in: stri
     'public.event_change_notify': { from: '20261121000006_cvf2b_plafond_heure_glissante.sql', lines: [17, 325], in: FILES[0] },
     'public.notif_event_status_changed': { from: '20261109000009_lot9bis_messages.sql', lines: [106, 374], in: FILES[0] },
     'public.notification_outbox_claim': { from: '20261125000006_f4_evenement_proche.sql', lines: [46, 457], in: FILES[0] },
+    'public.account_phone_finalize': { from: '20261120000006_f3d_cv_numero_profil.sql', lines: [8, 135], in: FILES[2] },
 };
 
 /** Fonctions nouvelles du lot. */

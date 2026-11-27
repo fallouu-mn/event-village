@@ -838,8 +838,10 @@ const CATALOG = {
     // billet (le transfert le renouvelle) et date dans l'in-app ; sans numéro (ligne d'avant la migration), texte du
     // lot 6. Aucun montant ni prix.
     TRANSFER_RECEIVED: define('TRANSFER_RECEIVED', {
-        label: 'Billet reçu', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        // Avis phase 2 (2a, B1) : + SMS (étape importante ; part la nuit)
+        label: 'Billet reçu', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
         link: ticketPath,
+        sms: (d, ctx) => `${SMS_PREFIX}le billet ${smsVar(text(d, 'title'), 30)} est dans vos billets, avec un nouveau numéro. ${appLink(ctx, '/tickets')}`,
         inApp: (d) => {
             const number = optText(d, 'ticket_number');
             return {
@@ -909,7 +911,9 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, public_notice: 'Intempéries annoncées sur Dakar.', refund_mode: 'AUTO' },
     }),
     EVENT_SUSPENDED_HOLDER: define('EVENT_SUSPENDED_HOLDER', {
-        label: 'Suspension d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
+        // Avis phase 2 (2a, B13 ; décision D5 du 27/11) : indispensable, plus de préférence ; reporté la nuit sauf événement à
+        // moins de 12 h (notif_event_soon)
+        label: 'Suspension d’un événement (porteurs)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', night: 'DEFER',
         // Avis phase 2 (2b, A1) : titulaire d'une table sans billet → « Ma table » (myTablePath retombe sur « Mes billets » sinon)
         inAppType: 'EVENT_STATUS', link: myTablePath, // carte B3 (25/11) : « Mes billets », la fiche suspendue est neutre
         inApp: (d) => ({ title: 'Événement suspendu', content: `${q(text(d, 'title'))} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.` }),
@@ -1014,7 +1018,8 @@ const CATALOG = {
     // Lot 9 (9.2, L30) : SMS à l'ancien numéro, sans lien ni compte. Lot 9 bis (11.2 M22, G.49) : + EMAIL au compte
     // (seconde mise en file par account_phone_finalize), fond « Numéro de téléphone modifié », bouton vers le profil.
     PHONE_CHANGED: define('PHONE_CHANGED', {
-        label: 'Numéro de téléphone modifié', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null,
+        // Avis phase 2 (2a, B2) : + cloche et notification au compte (troisième mise en file d'account_phone_finalize)
+        label: 'Numéro de téléphone modifié', channels: ['SMS', 'EMAIL', 'IN_APP', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/profile',
         inApp: () => ({
             title: 'Numéro de téléphone modifié',
@@ -1106,7 +1111,9 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT },
     }),
     NEW_ORDER: define('NEW_ORDER', {
-        label: 'Nouvelle commande', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['IN_APP'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
+        // Avis phase 2 (2a, B14) : + notification du téléphone, même regroupement de 15 minutes, toujours désactivable ; sans email
+        // (exception à G.50 : un email toutes les 15 minutes serait de trop)
+        label: 'Nouvelle commande', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
         inAppType: 'SALES', link: (d) => partnerEventPath(d, 'ventes'),
         // Finition 4 (point 2) : cloche groupée toutes les 15 minutes (order_count commandes depuis since) ; pas de push : un type
         // facultatif qui a le push doit avoir l'email (G.50), un email toutes les 15 minutes serait de trop
@@ -1263,9 +1270,14 @@ const CATALOG = {
         sample: { partner_id: SAMPLE_ID.partner, plan_id: 'pro', plan: 'Pro', days: 30 },
     }),
     PAYMENT_SUCCESS: define('PAYMENT_SUCCESS', {
-        label: 'Paiement confirmé', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'PAYMENT_SUCCESS',
+        // Avis phase 2 (2a, B5) : + SMS (abonnement : un seul SMS, celui du paiement, pas celui de SUBSCRIPTION_ACTIVATED ;
+        // « confirmé » plutôt que « reçu » : le « ç » est hors GSM-7 et ferait passer le SMS en deux segments)
+        label: 'Paiement confirmé', channels: ['IN_APP', 'EMAIL', 'PUSH', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'PAYMENT_SUCCESS',
         link: (d) => (field(d, 'payment_target') === 'SUBSCRIPTION' ? '/partner/subscription' : '/orders'),
         inApp: (d) => ({ title: 'Paiement confirmé', content: `Votre paiement de ${money(d, 'amount')} a été validé.` }),
+        sms: (d, ctx) => (field(d, 'payment_target') === 'SUBSCRIPTION'
+            ? `${SMS_PREFIX}paiement de ${smsAmount(num(d, 'amount'))} confirmé pour votre abonnement. Merci. ${appLink(ctx, '/partner/subscription')}`
+            : `${SMS_PREFIX}paiement de ${smsAmount(num(d, 'amount'))} confirmé. Merci. ${appLink(ctx, '/orders')}`),
         sample: { payment_id: SAMPLE_ID.payment, amount: 15_000 },
     }),
     // Lot 10a : parcours de réservation d'une salle (avis mis en file par hall_reserve, hall_payment_confirm,
@@ -2063,8 +2075,10 @@ const CATALOG = {
         sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER' },
     }),
     ORDER_COURIER_INVITED: define('ORDER_COURIER_INVITED', {
-        label: 'Invitation à livrer', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'ORDER',
+        // Avis phase 2 (2a, B6) : + SMS (reporté la nuit) ; lien court de la liste des invitations (l'identifiant ne tient pas)
+        label: 'Invitation à livrer', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'ORDER',
         link: (d) => `/courier/invitations/${ident(d, 'invitation_id')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(optText(d, 'partner_name') ?? 'un établissement', 40)} vous invite à livrer ses commandes. Répondez : ${appLink(ctx, '/courier/invitations')}`,
         inApp: (d) => {
             const name = optText(d, 'partner_name');
             return {
@@ -2343,7 +2357,8 @@ const CATALOG = {
         sample: { debt_id: SAMPLE_ID.debt, amount: 5_000, debt: 3_000, account_kind: 'ORGANISATEUR', entry_type: 'REFUND_DEBIT' },
     }),
     ADMIN_NOTIFICATION_FAILED: define('ADMIN_NOTIFICATION_FAILED', {
-        label: 'Envoi en échec', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'NOTIFICATION_ALERT',
+        label: 'Envoi en échec', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'NOTIFICATION_ALERT',
         link: (d) => `/admin/notifications/${ident(d, 'outbox_id')}`,
         inApp: (d) => {
             const attempts = optNum(d, 'attempts');
@@ -2356,7 +2371,8 @@ const CATALOG = {
     }),
     // Lot 9 bis (11.2 M6, R31) : réémis par notification_daily_checks, compte les SMS indispensables du jour.
     ADMIN_SMS_DAILY_THRESHOLD: define('ADMIN_SMS_DAILY_THRESHOLD', {
-        label: 'Volume de SMS indispensables élevé', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
+        label: 'Volume de SMS indispensables élevé', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Volume de SMS indispensables élevé',
@@ -2398,7 +2414,8 @@ const CATALOG = {
     // Lot 7 (7.0 a, D15) : alerte à 80 % du budget des SMS optionnels (notif.sms_optional_daily_cap), une fois par
     // jour de Dakar, mise en file par notification_daily_checks.
     ADMIN_SMS_OPTIONAL_80: define('ADMIN_SMS_OPTIONAL_80', {
-        label: 'SMS optionnels à 80 % du plafond', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
+        label: 'SMS optionnels à 80 % du plafond', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'SMS optionnels : 80 % du plafond',
@@ -2409,7 +2426,8 @@ const CATALOG = {
     // Lot 7 (7.0 a, D16) : prévision de la veille, mise en file par notification_reminders_schedule quand les rappels
     // SMS prévus pour le lendemain dépassent le budget optionnel restant de ce jour.
     ADMIN_SMS_FORECAST: define('ADMIN_SMS_FORECAST', {
-        label: 'Rappels de demain au-delà du budget SMS', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
+        label: 'Rappels de demain au-delà du budget SMS', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Budget SMS de demain insuffisant',
@@ -2674,7 +2692,8 @@ const CATALOG = {
     }),
     // N14 (R15) : admins events.read, annulation par l'organisateur, motif interne.
     ADMIN_EVENT_CANCELLED: define('ADMIN_EVENT_CANCELLED', {
-        label: 'Événement annulé par l’organisateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'EVENT_STATUS',
+        label: 'Événement annulé par l’organisateur', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'EVENT_STATUS',
         link: (d) => `/admin/events/${ident(d, 'event_id')}`,
         inApp: (d) => {
             const company = optText(d, 'company');
@@ -2774,7 +2793,8 @@ const CATALOG = {
     // N21 (R18) : titre, affiche, lieu, date changés ou catégorie ajoutée après validation ; events.read.
     // Lot 9 ter (M1, 9t.10) : prix ou canaux de vente d'une catégorie changés (parties PRICE et CHANNELS).
     ADMIN_EVENT_CHANGED: define('ADMIN_EVENT_CHANGED', {
-        label: 'Événement modifié après validation', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
+        label: 'Événement modifié après validation', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
         link: (d) => `/admin/events/${ident(d, 'event_id')}`,
         inApp: (d) => {
             const company = optText(d, 'company');
@@ -2835,7 +2855,8 @@ const CATALOG = {
     }),
     // N2 (9t.10, R95) : publication par l'organisatrice d'un événement validé ; events.read.
     ADMIN_EVENT_PUBLISHED: define('ADMIN_EVENT_PUBLISHED', {
-        label: 'Événement publié par l’organisateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
+        label: 'Événement publié par l’organisateur', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
         link: (d) => `/admin/events/${ident(d, 'event_id')}`,
         inApp: (d) => {
             const company = optText(d, 'company');
@@ -2848,7 +2869,8 @@ const CATALOG = {
     }),
     // N3 (9t.10, R95) : soumission retirée de la validation par l'organisatrice ; events.read.
     ADMIN_EVENT_WITHDRAWN: define('ADMIN_EVENT_WITHDRAWN', {
-        label: 'Soumission retirée par l’organisateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
+        label: 'Soumission retirée par l’organisateur', channels: ['IN_APP', 'EMAIL', 'PUSH'], night: 'DEFER', // avis phase 2 (2a, B11) : + notification, reportée la nuit
+        audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
         link: (d) => `/admin/events/${ident(d, 'event_id')}`,
         inApp: (d) => {
             const company = optText(d, 'company');
@@ -2886,7 +2908,8 @@ const CATALOG = {
     // ramené à 160 septets avec l'URL de 27 caractères : « plusieurs connexions ont échoué » (au lieu de « plusieurs
     // essais de connexion ont échoué », 169 septets, deux segments).
     ACCOUNT_LOGIN_FAILURES: define('ACCOUNT_LOGIN_FAILURES', {
-        label: 'Essais de connexion échoués', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: null,
+        // Avis phase 2 (2a, B4) : + cloche et notification
+        label: 'Essais de connexion échoués', channels: ['SMS', 'EMAIL', 'IN_APP', 'PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
         link: () => '/forgot-password',
         inApp: () => ({
             title: 'Essais de connexion échoués',
@@ -2898,7 +2921,8 @@ const CATALOG = {
     // Lot 9 quinquies (C2 : AUTH-09) : SMS indispensable au numéro du compte (texte du chef de projet) et email de
     // confirmation à l'adresse désormais vérifiée ; l'adresse n'est jamais écrite dans le SMS.
     EMAIL_ADDED: define('EMAIL_ADDED', {
-        label: 'Adresse email ajoutée au compte', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: null,
+        // Avis phase 2 (2a, B3) : + cloche et notification
+        label: 'Adresse email ajoutée au compte', channels: ['SMS', 'EMAIL', 'IN_APP', 'PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
         link: () => '/aide',
         inApp: () => ({
             title: 'Adresse email ajoutée',
@@ -2923,7 +2947,8 @@ const CATALOG = {
     // Finition 3d (point 3) : un compte devient SUPERADMIN ; alerte (SMS et cloche) à chaque SUPERADMIN actif, l'auteur
     // compris. Pire cas : deux noms tronqués à 25 caractères, 152 septets, un segment GSM-7.
     SUPERADMIN_PROMOTED: define('SUPERADMIN_PROMOTED', {
-        label: 'Nouveau super-administrateur (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Nouveau super-administrateur (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], // avis phase 2 (2a, B12) : + notification
+        audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/admin/users',
         inApp: (d) => ({
             title: 'Nouveau super-administrateur',
@@ -2935,7 +2960,8 @@ const CATALOG = {
     }),
     // Finition 3d (point 2c) : un code de secours a servi (SMS à l'ancien numéro, écrit dans la ligne d'envoi ; email).
     ADMIN_BACKUP_CODE_USED: define('ADMIN_BACKUP_CODE_USED', {
-        label: 'Code de secours utilisé (alerte)', channels: ['SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: null,
+        // Avis phase 2 (2a, B12) : + cloche et notification au compte (sécurité : part la nuit)
+        label: 'Code de secours utilisé (alerte)', channels: ['SMS', 'EMAIL', 'IN_APP', 'PUSH'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/admin/securite',
         inApp: (d) => ({
             title: 'Code de secours utilisé',
@@ -2964,7 +2990,8 @@ const CATALOG = {
     }),
     // Finition 3d (points 2a et 2c) : SMS au NOUVEAU numéro et cloche au compte
     ADMIN_PHONE_CONFIRMED: define('ADMIN_PHONE_CONFIRMED', {
-        label: 'Numéro d’un administrateur confirmé (nouveau numéro)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Numéro d’un administrateur confirmé (nouveau numéro)', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], // avis phase 2 (2a, B12) : + notification
+        audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/profile',
         inApp: (d) => ({
             title: 'Numéro de téléphone changé',

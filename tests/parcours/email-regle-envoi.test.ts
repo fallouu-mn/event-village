@@ -244,6 +244,11 @@ describe('9b.49 G.49 — une ligne EMAIL réellement créée pour un compte vér
 const PREFERENCES_ROUTE = '../../app/api/notifications/preferences/route';
 /** Optionnels qui ont le push et reçoivent EMAIL (contrat 5.50, 11.2 « + EMAIL seul », décision D-E2). */
 const OPTIONAL_WITH_EMAIL = ['EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER', 'REMINDER_H3', 'CONTROLLER_REMINDER'];
+/**
+ * Lot « Avis », phase 2 (B14, exception signalée au rapport) : ventes groupées de l'organisatrice (NEW_ORDER), notification du
+ * téléphone toutes les 15 minutes au plus, sans email (un email toutes les 15 minutes serait de trop ; finition 4, point 2).
+ */
+const G50_EXCLUDED = new Set(['NEW_ORDER']);
 
 /** Préférence posée par la route, comme l'écran (200 exigé). */
 async function setPreference(user: Buyer, topic: string, channel: string, enabled: boolean): Promise<void> {
@@ -287,14 +292,14 @@ function screenSource(rel: string, why: string): string {
 
 describe('9b.50 G.50 — préférences : l’email se règle comme le push, les indispensables ne se coupent pas (G53-9)', () => {
     test('catalogue (sans base) : tout type optionnel qui a le push déclare EMAIL, dont les quatre types de la consigne', () => {
-        const withoutEmail = CATALOG_TYPES.filter((t) => CATALOG[t].family === 'OPTIONAL' && CATALOG[t].channels.includes('PUSH') && !CATALOG[t].channels.includes('EMAIL'));
+        const withoutEmail = CATALOG_TYPES.filter((t) => CATALOG[t].family === 'OPTIONAL' && CATALOG[t].channels.includes('PUSH') && !CATALOG[t].channels.includes('EMAIL') && !G50_EXCLUDED.has(t));
         assert.deepEqual(withoutEmail, [], 'optionnels avec push sans EMAIL (G.50 : « comme le push »)');
         assert.deepEqual(OPTIONAL_WITH_EMAIL.filter((t) => !CATALOG[t]?.channels.includes('EMAIL')), [], 'EVENT_*_HOLDER, REMINDER_H3, CONTROLLER_REMINDER sans EMAIL');
     });
 
     test('registre : tout type optionnel qui a le push déclare EMAIL', async () => {
         const rows = await registry();
-        const withoutEmail = rows.filter((r) => r.family === 'OPTIONAL' && r.channels.includes('PUSH') && !r.channels.includes('EMAIL')).map((r) => r.type);
+        const withoutEmail = rows.filter((r) => r.family === 'OPTIONAL' && r.channels.includes('PUSH') && !r.channels.includes('EMAIL') && !G50_EXCLUDED.has(r.type)).map((r) => r.type);
         assert.deepEqual(withoutEmail, [], 'optionnels avec push sans EMAIL dans le registre (M03)');
     });
 
@@ -306,13 +311,19 @@ describe('9b.50 G.50 — préférences : l’email se règle comme le push, les 
         assert.deepEqual(state(rows.SMS), ['PENDING', null], 'le SMS du rappel n’est pas touché');
     });
 
-    test('EVENT_SUSPENDED_HOLDER : EVENT_UPDATES/EMAIL coupé → EMAIL SKIPPED PREFERENCE_DISABLED ; préférence ouverte → EMAIL en attente', async () => {
+    // Lot « Avis », phase 2 (B13, décision D5 du 27/11 ; modification signalée au rapport) : la suspension devient indispensable ;
+    // le sujet EVENT_UPDATES ne règle plus que la reprise. Avant : EVENT_SUSPENDED_HOLDER coupé par EVENT_UPDATES/EMAIL. Après :
+    // même contrôle sur EVENT_REACTIVATED_HOLDER (toujours facultatif), et la suspension part malgré la préférence coupée.
+    test('EVENT_REACTIVATED_HOLDER : EVENT_UPDATES/EMAIL coupé → EMAIL SKIPPED PREFERENCE_DISABLED ; préférence ouverte → EMAIL en attente ; EVENT_SUSPENDED_HOLDER indispensable', async () => {
         const off = await verifiedAccount('pref-off');
         await setPreference(off, 'EVENT_UPDATES', 'EMAIL', false);
-        assert.deepEqual(state((await enqueueRolledBack('EVENT_SUSPENDED_HOLDER', off.userId)).EMAIL), ['SKIPPED', 'PREFERENCE_DISABLED'],
+        assert.deepEqual(state((await enqueueRolledBack('EVENT_REACTIVATED_HOLDER', off.userId)).EMAIL), ['SKIPPED', 'PREFERENCE_DISABLED'],
             'préférence coupée : ligne EMAIL SKIPPED (aujourd’hui aucune ligne EMAIL, type sans EMAIL)');
+        const suspended = (await enqueueRolledBack('EVENT_SUSPENDED_HOLDER', off.userId)).EMAIL;
+        assert.deepEqual(state(suspended), ['PENDING', null], 'suspension : indispensable, la préférence coupée ne l’arrête plus');
+        assert.equal(suspended?.family, 'ESSENTIAL', 'famille ESSENTIAL copiée du registre');
         const on = await verifiedAccount('pref-on');
-        assert.deepEqual(state((await enqueueRolledBack('EVENT_SUSPENDED_HOLDER', on.userId)).EMAIL), ['PENDING', null], 'préférence ouverte : email en attente');
+        assert.deepEqual(state((await enqueueRolledBack('EVENT_REACTIVATED_HOLDER', on.userId)).EMAIL), ['PENDING', null], 'préférence ouverte : email en attente');
     });
 
     test('indispensables : emails optionnels coupés, PURCHASE_CONFIRMED et EVENT_CHANGED partent quand même par email', async () => {

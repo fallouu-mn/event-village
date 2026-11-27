@@ -92,10 +92,12 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B'), // G.49
     ess('TRANSFER_EXPIRED', [I, P, M, S], 'CLIENT', 'B'), // G.49
     ess('TRANSFER_CLAIMED_SENDER', [I, P, M, S], 'CLIENT', 'B'), // G.49
-    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B'), // lot 7, tâche 7.9 (D91, migration 20261105000007)
+    // avis phase 2 (2a, modification signalée) : + SMS (B1)
+    ess('TRANSFER_RECEIVED', [I, P, M, S], 'CLIENT', 'B'), // lot 7, tâche 7.9 (D91, migration 20261105000007)
     ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B'), // 11.2 M4
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A'),
-    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT'), // G.50
+    // avis phase 2 (2a, modification signalée) : indispensable (B13, D5)
+    ess('EVENT_SUSPENDED_HOLDER', [I, P, M, S], 'CLIENT', 'B'), // G.50
     opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT'), // G.50
     ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B'), // lot 9 bis (R14, 11.2 M1) : indispensable, sujet NULL
     opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT'),
@@ -103,7 +105,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('REFUND_REQUESTED', [I, S, M, P], 'CLIENT', 'A'), // G.49
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A'),
     ess('PASSWORD_CHANGED', [I, S, M, P], 'ANY', 'B'),
-    ess('PHONE_CHANGED', [S, M], 'ANY', 'A'), // lot 9, tâche 9.2 ; lot 9 bis (11.2 M22) : + EMAIL au compte
+    // avis phase 2 (2a, modification signalée) : + cloche et notification (B2)
+    ess('PHONE_CHANGED', [S, M, I, P], 'ANY', 'A'), // lot 9, tâche 9.2 ; lot 9 bis (11.2 M22) : + EMAIL au compte
     ess('PUSH_TEST', [P], 'ANY', 'B'),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B'),
@@ -111,7 +114,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('EVENT_REACTIVATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'B'), // G.49
     opt('FIRST_TICKET_SOLD', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
-    opt('NEW_ORDER', 'PRO_ACTIVITY', [I], 'PARTNER'),
+    // avis phase 2 (2a, modification signalée) : + notification (B14)
+    opt('NEW_ORDER', 'PRO_ACTIVITY', [I, P], 'PARTNER'),
     opt('CATEGORY_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     opt('EVENT_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     ess('SHIFT_DISCREPANCY', [I, S, P, M], 'PARTNER', 'A'), // G.49
@@ -127,7 +131,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('PARTNER_REACTIVATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('TRIAL_STARTED', [I, M, P], 'PARTNER', 'B'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
     ess('SUBSCRIPTION_ACTIVATED', [I, M, P], 'PARTNER', 'A'), // G.49
-    ess('PAYMENT_SUCCESS', [I, M, P], 'CLIENT', 'A'), // G.49
+    // avis phase 2 (2a, modification signalée) : + SMS (B5)
+    ess('PAYMENT_SUCCESS', [I, M, P, S], 'CLIENT', 'A'), // G.49
     // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle
     // Lot 10b (migration 20261126000003, modification signalée au rapport) : SMS ajouté à chaque étape, 4 types de plus
     ess('HALL_RESERVATION_PENDING', [I, P, M, S], 'CLIENT', 'B'),
@@ -182,7 +187,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ORDER_HANDED_OVER_PRO', [I, P, M, S], 'PARTNER', 'B'),
     ess('ORDER_COURIER_ASSIGNED', [I, P, M, S], 'CLIENT', 'B'),
     ess('ORDER_COURIER_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
-    ess('ORDER_COURIER_INVITED', [I, P, M], 'CLIENT', 'B'),
+    // avis phase 2 (2a, modification signalée) : + SMS (B6)
+    ess('ORDER_COURIER_INVITED', [I, P, M, S], 'CLIENT', 'B'),
     // Lot 12c (migration 20261224000001, ajout signalé au rapport) : vérification des produits
     ess('ADMIN_PRODUCT_REVIEW', [I, M], 'ADMIN', 'B', 'partners.validate'),
     ess('PRODUCT_REVIEW_DECIDED', [I, P, M], 'PARTNER', 'A'),
@@ -214,13 +220,17 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'payments.read'),
-    ess('ADMIN_NOTIFICATION_FAILED', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
-    ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'notifications.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_NOTIFICATION_FAILED', [I, M, P], 'ADMIN', 'B', 'notifications.read'), // G.49
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M, P], 'ADMIN', 'B', 'notifications.read'),
     ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
     ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
     // Lot 7, tâche 7.0 a (contrat M2.1, D15) : alerte à 80 % du plafond optionnel, prévision de la veille.
-    ess('ADMIN_SMS_OPTIONAL_80', [I, M], 'ADMIN', 'B', 'notifications.read'),
-    ess('ADMIN_SMS_FORECAST', [I, M], 'ADMIN', 'B', 'notifications.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_SMS_OPTIONAL_80', [I, M, P], 'ADMIN', 'B', 'notifications.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_SMS_FORECAST', [I, M, P], 'ADMIN', 'B', 'notifications.read'),
     sync('OTP_LOGIN'),
     sync('OTP_REGISTER'),
     sync('OTP_PASSWORD_RESET'),
@@ -242,14 +252,16 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('TRANSFER_RECIPIENT_CHANGED', [I, P, M, S], 'CLIENT', 'B'),
     ess('CONTROLLER_INVITATION', [S, I, P, M], 'CLIENT', 'B'),
     ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M, P], 'PARTNER', 'A'),
-    ess('ADMIN_EVENT_CANCELLED', [I, M], 'ADMIN', 'B', 'events.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_EVENT_CANCELLED', [I, M, P], 'ADMIN', 'B', 'events.read'),
     ess('CONTROLLER_EVENT_CANCELLED', [I, S, M, P], 'CONTROLLER', 'B'),
     ess('CONTROLLER_EVENT_CHANGED', [I, S, M, P], 'CONTROLLER', 'B'),
     ess('CONTROLLER_EVENT_STATUS', [I, M, S, P], 'CONTROLLER', 'B'),
     ess('TICKET_CANCELLED', [I, S, M, P], 'ANY', 'A'),
     ess('ACCOUNT_SUSPENDED', [I, S, M, P], 'ANY', 'A'),
     ess('ACCOUNT_REACTIVATED', [I, S, M, P], 'ANY', 'A'),
-    ess('ADMIN_EVENT_CHANGED', [I, M], 'ADMIN', 'B', 'events.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_EVENT_CHANGED', [I, M, P], 'ADMIN', 'B', 'events.read'),
     ess('EVENT_SUBMITTED_ACK', [I, M, P], 'PARTNER', 'B'),
     ess('EVENT_FINISHED', [I, M, P], 'PARTNER', 'A'),
     ess('CLOSING_REPORT_READY', [I, M, P], 'PARTNER', 'A'),
@@ -257,18 +269,22 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     { type: 'EMAIL_VERIFICATION', family: 'ESSENTIAL', topic: null, channels: [M], audience: 'ANY', suspended_policy: 'ALLOW', sync_only: true, admin_permission: null },
     // Lot 9 ter (B.7 T-B4, contrat 11.1) : types nouveaux du lot, dont SCAN_REFUSALS_ALERT de la section D ; rouges jusqu'à M04.
     ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A'),
-    ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'events.read'),
-    ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'events.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_EVENT_PUBLISHED', [I, M, P], 'ADMIN', 'B', 'events.read'),
+    // avis phase 2 (2a, modification signalée) : + notification (B11)
+    ess('ADMIN_EVENT_WITHDRAWN', [I, M, P], 'ADMIN', 'B', 'events.read'),
     ess('SCAN_REFUSALS_ALERT', [I, P, M, S], 'PARTNER', 'B'),
     // Lot 9 quater (A8 : AUD-05 ; A9 : AUD-34) : deux types nouveaux (migrations 20261111000002 et …04), modification signalée
     ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'notifications.read'),
     ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M, P], 'ANY', 'B'),
     // Lot 9 quinquies (D1, A1, A2, A3, C2) : types nouveaux (migrations 20261112000001, …02, …06, …08), modification signalée
     ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B'),
-    ess('ACCOUNT_LOGIN_FAILURES', [S, M], 'ANY', 'B'),
+    // avis phase 2 (2a, modification signalée) : + cloche et notification (B4)
+    ess('ACCOUNT_LOGIN_FAILURES', [S, M, I, P], 'ANY', 'B'),
     sync('ACCOUNT_ACTIVATION'),
     sync('OTP_ADMIN'),
-    ess('EMAIL_ADDED', [S, M], 'ANY', 'B'),
+    // avis phase 2 (2a, modification signalée) : + cloche et notification (B3)
+    ess('EMAIL_ADDED', [S, M, I, P], 'ANY', 'B'),
     // Finition 1 (E-20) : avis à la partenaire, cloche, push et email, sans SMS (migration 20261115000002), modification signalée
     ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M, S], 'PARTNER', 'B'),
     ess('CONTROLLER_INVITATION_DECLINED', [I, P, M, S], 'PARTNER', 'B'),
@@ -276,10 +292,13 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('CONTROLLER_BECAME_ADMIN', [I, P, M, S], 'PARTNER', 'B'), // migration 20261115000014, ajout signalé
     // Finition 3d (migrations 20261120…) : types nouveaux de la finition, ajout signalé
     ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'A'),
-    ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A'),
-    ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A'),
+    // avis phase 2 (2a, modification signalée) : + notification (B12)
+    ess('SUPERADMIN_PROMOTED', [I, S, M, P], 'ADMIN', 'A'),
+    // avis phase 2 (2a, modification signalée) : + cloche et notification (B12)
+    ess('ADMIN_BACKUP_CODE_USED', [S, M, I, P], 'ADMIN', 'A'),
     ess('ADMIN_PHONE_CHANGED', [S, M], 'ANY', 'A'),
-    ess('ADMIN_PHONE_CONFIRMED', [I, S, M], 'ADMIN', 'A'),
+    // avis phase 2 (2a, modification signalée) : + notification (B12)
+    ess('ADMIN_PHONE_CONFIRMED', [I, S, M, P], 'ADMIN', 'A'),
     // Finition 4 (décisions du client du 19/11, migration 20261125000001) : cinq types nouveaux (ajout signalé au rapport)
     opt('SALES_UPDATE_SMS', 'PRO_ACTIVITY', [S], 'PARTNER'),
     opt('PARTNER_DAILY_SUMMARY', 'SALES_SUMMARY', [I, S, M, P], 'PARTNER'),

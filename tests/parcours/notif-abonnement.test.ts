@@ -95,8 +95,14 @@ describe('8.2 m — PAYMENT_SUCCESS : le lien suit la cible du paiement (contrat
     test('abonnement payé et confirmé : une notification dont le lien mène à /partner/subscription', async () => {
         const payment = await paySubscription();
         const all = await outboxRows({ keyPrefix: `PAYMENT_SUCCESS:${payment.id}`, userId: subscriber.userId }); const rows = all.filter((r) => r.channel === 'IN_APP');
-        assert.deepEqual(all.map((r) => ({ type: r.type, channel: r.channel })).sort((a, b) => a.channel.localeCompare(b.channel)), [{ type: 'PAYMENT_SUCCESS', channel: 'EMAIL' }, { type: 'PAYMENT_SUCCESS', channel: 'IN_APP' }, { type: 'PAYMENT_SUCCESS', channel: 'PUSH' }],
-            `une ligne par canal du registre, IN_APP, EMAIL et (finition 4, signalé) PUSH : ${JSON.stringify(all.map((r) => r.idempotency_key))}`);
+        // Lot « Avis », phase 2 (B5, modification signalée au rapport) : + SMS. Avant : EMAIL, IN_APP, PUSH.
+        assert.deepEqual(all.map((r) => ({ type: r.type, channel: r.channel })).sort((a, b) => a.channel.localeCompare(b.channel)), [{ type: 'PAYMENT_SUCCESS', channel: 'EMAIL' }, { type: 'PAYMENT_SUCCESS', channel: 'IN_APP' }, { type: 'PAYMENT_SUCCESS', channel: 'PUSH' }, { type: 'PAYMENT_SUCCESS', channel: 'SMS' }],
+            `une ligne par canal du registre, IN_APP, EMAIL, (finition 4, signalé) PUSH et (avis phase 2, signalé) SMS : ${JSON.stringify(all.map((r) => r.idempotency_key))}`);
+        // Lot « Avis », phase 2 (B5, test « une fois ») : un abonnement payé donne UN seul SMS, celui du paiement (l'avis
+        // « abonnement activé » n'a pas de SMS)
+        const smsRows = (await outboxRows({ userId: subscriber.userId, channel: 'SMS', type: ['PAYMENT_SUCCESS', 'SUBSCRIPTION_ACTIVATED'] }))
+            .filter((r) => r.type === 'SUBSCRIPTION_ACTIVATED' || r.idempotency_key.startsWith(`PAYMENT_SUCCESS:${payment.id}`));
+        assert.deepEqual(smsRows.map((r) => r.type), ['PAYMENT_SUCCESS'], `un seul SMS pour l'abonnement : ${JSON.stringify(smsRows.map((r) => r.idempotency_key))}`);
 
         const n = await deliver(rows[0]);
         assert.deepEqual(

@@ -90,8 +90,9 @@ const FAMILY_LABELS: Record<string, string> = { ESSENTIAL: 'Indispensable (toujo
 const TOPIC_LABELS: Record<string, string> = {
   REMINDERS: 'Rappels avant l’événement',
   // Lot 9 bis (R14, contrat 5.32) : un changement de date ou de lieu est indispensable ; ce sujet ne règle plus
-  // que la suspension et la reprise (même libellé que GET /api/notifications/preferences).
-  EVENT_UPDATES: 'Suspension et reprise d’un événement',
+  // que la suspension et la reprise (même libellé que GET /api/notifications/preferences). Lot « Avis », phase 2 (B13) : la
+  // suspension est indispensable ; le sujet ne règle plus que la reprise.
+  EVENT_UPDATES: 'Reprise d’un événement',
   PRO_ACTIVITY: 'Activité des ventes',
   // Finition 4
   SALES_SUMMARY: 'Résumé du matin',
