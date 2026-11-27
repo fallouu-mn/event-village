@@ -81,7 +81,10 @@ BEGIN
       FROM public.venue_opening_hours h WHERE h.venue_id = v.id;
 
     -- Fenêtres où une heure peut être choisie : horaires des 7 jours, moins les fermetures, de maintenant + préparation
-    -- à 7 jours (même borne que order_quote_compute ; la base refait tous les contrôles au devis)
+    -- à 7 jours (même borne que order_quote_compute ; la base refait tous les contrôles au devis). Fermetures : le devis
+    -- du 12c (20261224000003, VENUE_CLOSED) refuse une heure t quand une fermeture touche [t - préparation, t + 1 min) ;
+    -- à la minute près, c'est t dans [début, fin + préparation) : chaque fermeture est retirée jusqu'à sa fin plus la
+    -- préparation (fermeture jusqu'à 18 h, préparation 30 min : premier créneau 18 h 30)
     SELECT COALESCE(jsonb_agg(jsonb_build_array(to_char(lower(r), 'YYYY-MM-DD"T"HH24:MI'), to_char(upper(r), 'YYYY-MM-DD"T"HH24:MI'))
                               ORDER BY lower(r)), '[]'::jsonb)
       INTO v_windows
@@ -89,13 +92,14 @@ BEGIN
             (SELECT range_agg(public.venue_range(g.day::date, h.opens_at, h.closes_at))
                FROM generate_series((v_today - 1)::timestamp, (v_today + 7)::timestamp, interval '1 day') AS g(day)
                JOIN public.venue_opening_hours h ON h.venue_id = v.id AND h.weekday = EXTRACT(ISODOW FROM g.day))
-            - COALESCE((SELECT range_agg(c.period) FROM public.venue_closures c
-                         WHERE c.venue_id = v.id AND c.cancelled_at IS NULL AND c.ends_at > v_now), '{}'::tsmultirange))
+            - COALESCE((SELECT range_agg(tsrange(c.starts_at, c.ends_at + make_interval(mins => v_prep), '[)')) FROM public.venue_closures c
+                         WHERE c.venue_id = v.id AND c.cancelled_at IS NULL AND c.ends_at + make_interval(mins => v_prep) > v_now), '{}'::tsmultirange))
            * tsmultirange(tsrange(v_now + make_interval(mins => v_prep), v_now + interval '7 days', '[)'))) AS r;
 
-    -- « Tout de suite » : ouvert pendant toute la préparation (règle de order_quote_compute) et aucune fermeture
+    -- « Tout de suite » : mêmes bornes que order_quote_compute (20261224000003) : ouvert de maintenant à l'heure de remise
+    -- (maintenant + préparation + 1 min), aucune fermeture de maintenant à l'heure de remise + 1 min
     v_asap := public.venue_open_covers(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 1), '[)'))
-              AND NOT public.venue_closed_during(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 1), '[)'));
+              AND NOT public.venue_closed_during(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 2), '[)'));
 
     -- Fermeture exceptionnelle en cours (correctifs après contre-vérification, idée 9) : jusqu'à quand, fermetures qui se
     -- suivent réunies ; la carte l'annonce et propose le premier créneau (première fenêtre ci-dessus)

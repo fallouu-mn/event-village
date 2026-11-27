@@ -157,6 +157,10 @@ describe('Lot 12b, correctifs après contre-vérification — idées 8 à 13 (co
         assert.equal(closureText('2026-11-27T18:30', '2026-11-27'), 'Fermé exceptionnellement jusqu’à 18 h 30 — commandez pour plus tard');
         const sql = read('supabase/migrations/20261226000002_l12b_carte_des_plats.sql');
         assert.match(sql, /'closed_until', to_char\(v_closed_until, 'YYYY-MM-DD"T"HH24:MI'\)/);
+        // Alignée sur le devis du 12c (VENUE_CLOSED : fermeture qui touche [t - préparation, t + 1 min)) : chaque fermeture
+        // est retirée des heures proposées jusqu'à sa fin plus la préparation ; « tout de suite » aux mêmes bornes
+        assert.match(sql, /range_agg\(tsrange\(c\.starts_at, c\.ends_at \+ make_interval\(mins => v_prep\), '\[\)'\)\)/);
+        assert.match(sql, /venue_closed_during\(v\.id, tsrange\(v_now, v_now \+ make_interval\(mins => v_prep \+ 2\), '\[\)'\)\)/);
         assert.match(code('components/orders/client/menu/MenuView.tsx'), /closureText\(menu\.ordering\.closedUntil, today\)/);
     });
 

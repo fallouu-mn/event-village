@@ -39,6 +39,7 @@ import { GET as partnerOrdersGet } from '../../app/api/partner/orders/route';
 import { GET as courierOrdersGet } from '../../app/api/courier/orders/route';
 import { decideVenue, newTable } from './l11a-helpers';
 import { etaLabel } from '../../lib/orders/client-view';
+import { quarterSlots } from '../../lib/orders/cart-client';
 import {
     addCourier, codeOf, courierAct, dailySpecialWindowClosed, n, newBuyer, newDeliveryZone, newOption, newPartner, newProduct, newShop,
     openOrdersService, order, orderBody, partnerAct, payOrder, placed, platformSetting, releaseUnpaid, service, setPlatformSetting,
@@ -251,6 +252,45 @@ describe('A bis. Correctifs après contre-vérification : fermeture annoncée, h
         }
         const after = await menu(closedShop);
         assert.equal(((after.body.menu as Row).ordering as Row).closedUntil, null, 'fermeture levée : plus d’annonce');
+    });
+
+    test('carte alignée sur le devis du 12c : fermeture jusqu’à 18 h, préparation 30 min → premier créneau 18 h 30 ; heures proposées acceptées', async () => {
+        const closedShop = await newShop(partner, { prepMinutes: 30 });
+        const p = await newProduct(partner, closedShop, { price: 1_500, name: 'Mafé l12b-cv' });
+        // Fermeture en cours, jusqu'à demain 18 h (heure de Dakar)
+        const [c] = await sql<{ id: string; day: string }>(`
+            INSERT INTO public.venue_closures (venue_id, starts_at, ends_at, reason)
+            SELECT $1::uuid, date_trunc('hour', public.hall_dakar_now()) - interval '1 hour',
+                   (public.hall_dakar_now()::date + 1) + time '18:00', 'Inventaire (l12b-cv)'
+            RETURNING id, to_char(ends_at, 'YYYY-MM-DD') AS day`, [closedShop]);
+        try {
+            const res = await menu(closedShop);
+            assert.equal(res.status, 200, res.text);
+            const m = res.body.menu as Row;
+            const ordering = m.ordering as Row;
+            const windows = ordering.windows as string[][];
+            const slots = quarterSlots(windows as Array<[string, string]>);
+            console.log(`[L12B-CV] fermeture jusqu’à ${c.day}T18:00, préparation 30 min : première fenêtre ${JSON.stringify(windows[0])}, premiers créneaux ${JSON.stringify(slots.slice(0, 4))}, tout de suite ${String(ordering.asapAvailable)}`);
+            assert.equal(ordering.asapAvailable, false);
+            assert.equal(ordering.closedUntil, `${c.day}T18:00`);
+            assert.equal(windows[0][0], `${c.day}T18:30`, 'première fenêtre : fin de la fermeture + préparation');
+            assert.equal(slots[0], `${c.day}T18:30`, 'premier créneau proposé : 18 h 30');
+            const at = async (slot: string) => quote(client, orderBody(closedShop, [{ productId: p, quantity: 1 }], { scheduledFor: slot }));
+            const before = await at(`${c.day}T18:15`);
+            assert.equal(before.status, 409, before.text);
+            assert.equal(before.body.code, 'VENUE_CLOSED', '18 h 15 : préparation pendant la fermeture, refusé par le devis');
+            // Les heures proposées par la carte sont toutes acceptées par le devis (les 8 premières, puis une sur 12)
+            const sample = [...slots.slice(0, 8), ...slots.slice(8).filter((_, i) => i % 12 === 0)];
+            const refused: string[] = [];
+            for (const slot of sample) {
+                const r = await at(slot);
+                if (r.status !== 200) refused.push(`${slot} : HTTP ${r.status} ${String(r.body.code)}`);
+            }
+            console.log(`[L12B-CV] heures proposées essayées au devis : ${sample.length}, refusées ${JSON.stringify(refused)}`);
+            assert.deepEqual(refused, []);
+        } finally {
+            await sql('UPDATE public.venue_closures SET cancelled_at = now() WHERE id = $1', [c.id]);
+        }
     });
 
     test('idée 10 : le devis rend l’heure prévue (« tout de suite » : maintenant + préparation), mise en mots « Prête vers … »', async () => {
