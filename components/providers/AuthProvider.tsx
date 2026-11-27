@@ -226,8 +226,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     clearAllScanMemory();
                     clearAllDrafts();
                     clearPaymentHandoffs();
-                    // Design 1d : numéro de paiement seulement ; ce chemin vaut aussi pour toute visite sans compte, qui
-                    // garde ses recherches récentes (effacées au bouton et sur SIGNED_OUT)
+                    // Design 1d : données du compte seulement (numéro de paiement, demandes des tables, prénoms des invités,
+                    // panier des commandes : CV 12b, T3) ; ce chemin vaut aussi pour toute visite sans compte, qui garde ses
+                    // recherches récentes (effacées au bouton et sur SIGNED_OUT)
                     clearDevicePrefs('paiement');
                     void unsubscribePush(); // cvf2b 6.9 : même règle que SIGNED_OUT
                 }
