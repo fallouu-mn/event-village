@@ -125,8 +125,6 @@ describe('REST des produits, suppléments et portions avec les droits par colonn
             assert.deepEqual(ids.options, (owner ? [dailyOpt, goneOpt] : [dailyOpt]).sort(), `${who} : suppléments`);
             assert.deepEqual(ids.portions, (owner ? [daily, gone] : [daily]).sort(), `${who} : portions`);
         }
-        console.log(`[L12B-REST] base réunie :
-  ${seen.join('
-  ')}`);
+        console.log(`[L12B-REST] base réunie : ${seen.join(' | ')}`);
     });
 });
