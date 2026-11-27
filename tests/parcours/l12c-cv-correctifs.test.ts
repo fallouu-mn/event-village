@@ -16,6 +16,8 @@
  *  H. Rupture en un geste (point 12) : portions ramenées à ce qui est vendu, annulation.
  *  I. Avis ajoutés (point 7) : code bloqué, rappel de réponse, préparation, commande prête pour le livreur, décision par
  *     SMS, remboursement bloqué, rappel au client ; une fois chacun ; règle de nuit ; types identiques à la base.
+ *  J. Fermeture exceptionnelle (ajout du 27/11, migration 20261224000003) : devis et commande refusés pendant une
+ *     fermeture (venue_closures), « au plus tôt » comme à une heure choisie ; autres heures et fermeture annulée acceptées.
  */
 import '../helpers/env';
 import { after, before, beforeEach, describe, test } from 'node:test';
@@ -585,5 +587,53 @@ describe('I. avis ajoutés (point 7)', () => {
             }
         }
         assert.deepEqual(bad, []);
+    });
+});
+
+describe('J. fermeture exceptionnelle de l’établissement (ajout du 27/11)', () => {
+    test('devis et commande refusés pendant une fermeture, « au plus tôt » comme à une heure choisie', async () => {
+        const MESSAGE = 'Ce restaurant est fermé à ce moment-là. Choisissez une autre heure.';
+        const closedShop = await newShop(partner);
+        const dish = await newProduct(partner, closedShop, { price: 2_000, name: 'Thiéboudienne l12c-cv fermeture' });
+        const { orderInput } = await import('../../lib/orders/booking');
+        // Heure de Dakar = UTC : « demain 12:00 » et « après-demain 12:00 », dans les 7 jours, au quart d'heure
+        const noon = (days: number) => {
+            const d = new Date(Date.now() + days * 86_400_000);
+            d.setUTCHours(12, 0, 0, 0);
+            return d.toISOString().slice(0, 16);
+        };
+        const ask = async (scheduledFor?: string) => rpc('order_quote', orderInput(client.userId,
+            orderBody(closedShop, [{ productId: dish, quantity: 1 }], scheduledFor ? { scheduledFor } : {})));
+        const ids: string[] = [];
+        try {
+            assert.equal((await ask()).ok, true, 'ouvert avant la fermeture');
+            assert.equal((await ask(noon(1))).ok, true, 'demain midi ouvert avant la fermeture');
+            // Deux fermetures en cours : maintenant pendant 3 heures ; demain de 11:00 à 14:00 (heure de Dakar)
+            const rows = await sql<{ id: string }>(
+                `INSERT INTO public.venue_closures (venue_id, starts_at, ends_at, reason, created_by)
+                 VALUES ($1, date_trunc('minute', public.hall_dakar_now()) - interval '1 minute',
+                             date_trunc('minute', public.hall_dakar_now()) + interval '3 hours', 'Fermeture du test l12c-cv', $2),
+                        ($1, ($3::timestamp) - interval '1 hour', ($3::timestamp) + interval '2 hours', 'Fermeture du test l12c-cv', $2)
+                 RETURNING id`, [closedShop, partner.userId, noon(1)]);
+            ids.push(...rows.map((r) => String(r.id)));
+            assert.equal(ids.length, 2);
+
+            const now = await ask();
+            assert.deepEqual([now.ok, now.code, now.message], [false, 'VENUE_CLOSED', MESSAGE], `au plus tôt : ${JSON.stringify(now)}`);
+            const later = await ask(noon(1));
+            assert.deepEqual([later.ok, later.code, later.message], [false, 'VENUE_CLOSED', MESSAGE], `heure choisie : ${JSON.stringify(later)}`);
+            const created = await orderRpc(client, orderBody(closedShop, [{ productId: dish, quantity: 1 }]));
+            assert.deepEqual([created.ok, created.code], [false, 'VENUE_CLOSED'], `commande créée pendant la fermeture : ${JSON.stringify(created)}`);
+            const { count } = await service.from('orders').select('id', { count: 'exact', head: true }).eq('venue_id', closedShop);
+            assert.equal(count, 0, 'aucune commande enregistrée');
+            assert.equal((await ask(noon(2))).ok, true, 'une autre heure reste commandable');
+
+            // Fermeture annulée par la partenaire : de nouveau commandable
+            await sql(`UPDATE public.venue_closures SET cancelled_at = now() WHERE id = ANY($1::uuid[])`, [ids]);
+            assert.equal((await ask()).ok, true, 'fermeture annulée : au plus tôt de nouveau commandable');
+            assert.equal((await ask(noon(1))).ok, true, 'fermeture annulée : demain midi de nouveau commandable');
+        } finally {
+            if (ids.length) await sql(`DELETE FROM public.venue_closures WHERE id = ANY($1::uuid[])`, [ids]);
+        }
     });
 });
