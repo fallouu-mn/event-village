@@ -109,10 +109,16 @@ function inspectLayout(arg: LayoutArg): LayoutReport {
         }
         // Coupé par un conteneur qui masque son débordement
         if (!seenClip.has(el)) {
+            // Lot 12b (modification signalée au rapport du lot) : au-delà d'un conteneur qui défile en hauteur (corps d'une
+            // fenêtre, panneau collant), un texte sous la ligne de flottaison s'atteint en faisant défiler : il n'est pas
+            // « coupé » par les ancêtres qui masquent leur débordement (la fenêtre elle-même). Le contrôle en largeur ne
+            // change pas.
+            let scrolledY = false;
             for (let cur: Element | null = el; cur && cur !== document.body; cur = cur.parentElement) {
                 const s = getComputedStyle(cur);
+                if (cur !== el && (s.overflowY === 'auto' || s.overflowY === 'scroll') && cur.scrollHeight > cur.clientHeight + 1) scrolledY = true;
                 const hidesX = s.overflowX === 'hidden' || s.overflowX === 'clip';
-                const hidesY = s.overflowY === 'hidden' || s.overflowY === 'clip';
+                const hidesY = !scrolledY && (s.overflowY === 'hidden' || s.overflowY === 'clip');
                 if (!hidesX && !hidesY) continue;
                 const box = cur.getBoundingClientRect();
                 // Conteneur hors d'usage (fermé à 0 px : accordéon replié, animation) : déjà invisible
