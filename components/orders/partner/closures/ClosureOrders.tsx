@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { ApiError, errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
 import { dayText, fcfaText, instantHm } from '@/lib/tables/views';
+import { useFeatureFlags } from '@/lib/features/client';
 
 interface ClosureOrder {
     id: string;
@@ -43,8 +44,11 @@ export function ClosureOrders({ closureId, closureReason, focus = false }: { clo
     const [dialogError, setDialogError] = useState<string | null>(null);
     const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
     const ref = useRef<HTMLDivElement>(null);
+    // Service des commandes fermé : aucune lecture (la route répondrait « introuvable », compté comme une requête en échec)
+    const ordersOpen = useFeatureFlags()?.orders === true;
 
     const load = useCallback(async () => {
+        if (!ordersOpen) return;
         try {
             const body = await fetchJson<{ orders?: ClosureOrder[] }>(url);
             setOrders(Array.isArray(body.orders) ? body.orders : []);
@@ -53,7 +57,7 @@ export function ClosureOrders({ closureId, closureReason, focus = false }: { clo
             setOrders([]);
             if (!(err instanceof ApiError && err.status === 404)) console.error('[fermetures] commandes prévues :', errorMessage(err));
         }
-    }, [url]);
+    }, [url, ordersOpen]);
 
     useEffect(() => { void load(); }, [load]);
 

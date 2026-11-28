@@ -377,10 +377,16 @@ for (const theme of THEMES) {
                 await pp.getByRole('button', { name: 'Voir Yassa poulet' }).click();
                 const sheet = pp.getByRole('dialog', { name: 'Yassa poulet' });
                 await expect(sheet).toBeVisible({ timeout: 10_000 });
-                await expect(sheet.getByRole('list', { name: 'Allergènes du plat' })).toBeVisible();
+                const allergens = sheet.getByRole('list', { name: 'Allergènes du plat' });
+                await expect(allergens).toBeVisible();
+                await allergens.scrollIntoViewIfNeeded();
+                await settle(pp);
+                await shot(pp, 'client-allergenes', w.width, theme.key, false);
+                // Contrôle avec le bas de la fiche en vue : en haut, l'aide du champ des notes défile sous le pied fixe de la
+                // fenêtre (quantité, « Ajouter »), ce que le contrôle compterait comme un chevauchement (run 805)
+                await sheet.getByText('Par exemple : sans piment, bien cuit.').scrollIntoViewIfNeeded();
                 await settle(pp);
                 await checkLayout(pp, w.width, w.phone, 'allergènes et piment');
-                await shot(pp, 'client-allergenes', w.width, theme.key, false);
                 await pp.keyboard.press('Escape');
             }
             await cli.close();
