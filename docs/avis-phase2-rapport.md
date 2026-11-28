@@ -5,7 +5,11 @@ appliquée.** Inventaire de départ : `docs/avis-inventaire.md` et son annexe (b
 branche. Règle du 27/11 : on n'enlève aucun avis, on ajoute ce qui manque. Chaque écart a été revérifié dans le code avant
 d'être corrigé (constat cité en tête de chaque migration).
 
-[[ETAT]]
+**État au 28/11/2026 : terminé, non fusionné.** Run complet unique **799** (`d1696243d`, main `f7bf7ad94` inclus) :
+652 suites sur 653, e2e, budgets et mesure mobile verts, responsive 0 défaut bloquant ; les deux rouges (références de lignes
+de `docs/recette-billetterie.md` décalées par les commentaires ajoutés aux tests ; spec `carte-b3` sombre intermittent, hors
+du lot) sont rejoués verts au **run 804** (`15f043bc7` : matrice 1/1, responsive 249 specs). Six migrations, aucune
+appliquée. Onze types nouveaux, 25 types avec un canal de plus, aucun avis enlevé.
 
 ---
 
@@ -22,7 +26,7 @@ d'être corrigé (constat cité en tête de chaque migration).
 | `20261230000005_avis_parrainage_paiement.sql` | 2f, 2g, D8 | parrainage, paiement non abouti, avis avant l'anonymisation (types) |
 | `20261230000006_avis_mots.sql` | 2h | message de la garde de simulation (M17) |
 
-### Recopies (11 fonctions, chacune UNE fois, depuis sa dernière définition, ajouts seuls)
+### Recopies (12 fonctions, chacune UNE fois, depuis sa dernière définition, ajouts seuls)
 
 Test : `tests/schema/migration-avis2-rejouable.test.ts` (fichier et lignes cités, chaque ligne de la dernière définition
 retrouvée dans la recopie, une seule ligne remplacée déclarée, droits).
@@ -34,6 +38,7 @@ retrouvée dans la recopie, une seule ligne remplacée déclarée, droits).
 | `notif_event_status_changed` | `20261109000009_lot9bis_messages.sql:106-374` | suspension, reprise, clôture aux titulaires ; plafond |
 | `notification_outbox_claim` | `20261125000006_f4_evenement_proche.sql:46-457` | ne plus sauter (NO_VALID_TICKET) le report adressé au titulaire d'une table active |
 | `account_phone_finalize` | `20261120000006_f3d_cv_numero_profil.sql:8-135` | seul émetteur qui impose ses canaux (B2 : cloche et notification) |
+| `notif_enqueue_grouped` | `20261125000003_f4_ventes.sql:37-92` | B14 : la notification des ventes reportée la nuit ne retient plus la série ni l'échéance de la cloche suivante ; une seule en attente par série (défaut trouvé par les runs 791 et 795, de nuit) |
 | `notif_admin_review_sms` | `20261126000004_l10b_cv_correctifs.sql:317-421` | sorte PRODUCT_REVIEW comptée (B8) |
 | `private.order_product_review_notify` | `20261224000001_l12c_verification.sql:441-467` | produit dans le SMS regroupé (B8) |
 | `private.order_review_batch_done` | `20261224000005_l12c_cv_correctifs.sql:54-75` | lot de produits dans le SMS regroupé (B8) |
@@ -46,7 +51,7 @@ validée, poste changé, argent à vérifier (sur la boîte d'envoi : aucune fon
 garde ses 9 définitions), filleul inscrit, paiement non abouti. Jamais recopiées : `order_courier_action`,
 `order_courier_remove` (12d), `notif_cashouts_notify`, `notif_enqueue`, `notif_event_soon`, `withdrawal_request`,
 `finance_setting_set` (contrôle du test). Droits : 15 fonctions nouvelles, toutes dans `private`, fermées à tous les rôles de
-l'API ; fonctions publiques recopiées : droits inchangés (rôle de service seulement). `03-verification.sql` : [[V03]].
+l'API ; fonctions publiques recopiées : droits inchangés (rôle de service seulement). `03-verification.sql` : **20 points sur 20 OK** (run complet 799, suite `hotfix-scripts`).
 
 ### Tests existants modifiés (avant → après), aucun affaibli
 
@@ -67,6 +72,12 @@ Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'a été changée.
 | `essai-simule` | message `SIMULATION_MISMATCH` | « L'envoi ne correspond pas au mode du paiement : … » (code EV403 inchangé) | M17 |
 | `f5-liens-avis` | 32 raisons « sans objet » | + 3 (dossier complété, caisse validée, poste changé : pages du compte et du scanner) | 2c |
 | `design1b-mots` | blocs a à d | **+ bloc e** (extension § 4.4, aucun bloc retiré) | 2h |
+| `l12c-cv-correctifs` (2 tests), `l12c-catalogue`, `l12c-statique` (S6) | avis des produits à vérifier : cloche, email | cloche, email, notification | B8 |
+| `notif-admins` (4 tests), `notif-envoyeur` (4), `messages-admin-9ter` (3), `sms-anti-abus`, `sms-plafond-optionnel` (2), `sms-veille` (3), `notif-outbox` (test 8) | alertes d'administration : cloche, email (2 lignes) | cloche, email, notification (3 lignes) ; plafonds de SMS : jamais de SMS (vérifié) | B9, B10, B11 |
+| `lot9quinquies-connexion` | 10e échec : SMS, email ; « aucun avis de plus » = 2 lignes | SMS, email, cloche, notification ; « aucun avis de plus » = même nombre qu'après le 10e échec | B4 |
+| `notif-transferts`, `confirmation-achat` (2 tests) | billet reçu : cloche, notification, email ; « aucun SMS au destinataire » | + SMS ; exactement un SMS au destinataire, texte « … est dans vos billets, avec un nouveau numéro. » | B1 |
+| `notif-pros` (ventes groupées) | une cloche pour les deux paiements | une cloche et une notification pour les deux paiements | B14 |
+| `docs/recette-billetterie.md` | 11 références `fichier:ligne` | recalées sur les mêmes lignes de test (décalées par les commentaires ajoutés) | run 799 |
 
 ### Exceptions du garde-fou (bloc e, chacune justifiée dans le test)
 
@@ -186,14 +197,36 @@ Résultats lus par l'API GitHub et les fichiers bruts de `ci-results` (jamais pa
 | 791, 792 | `0aded0997`, `3134434de` | rapide n°4 en deux moitiés (106 + 107 suites), en parallèle | 59/106 et 61/107 : deux cascades d'invariants causées par mes tests (commission rendue disponible trop tôt : w18 ; numéro changé sans l'authentification : v), 2 erreurs de compilation dans mes tests, une trentaine d'attentes de canaux exacts, un défaut de B14 (notification des ventes reportée la nuit qui retenait la série) → corrigés (`d4ad50569`) |
 | 795, 794 | `f2e1b05ce`, `e90c881ac` | rapide n°5 en deux moitiés | 103/106 et 106/107 ; typecheck et lint OK ; rouges : 3 attentes (nombre de lignes, SMS « billet reçu » au destinataire), un second défaut de B14 la nuit (cloche suivante décalée à 07 h 15) → corrigés (`d5604f64e`) |
 | 798 | `d5604f64e` | rapide ciblé, 15 suites (regroupements, attentes corrigées) | **15/15 vert**, typecheck et lint OK |
-| [[RUN_COMPLET]] | | run complet unique | [[RESULTAT_COMPLET]] |
+| **799** | `d1696243d` | **run complet unique** (4 lots, e2e, responsive, budgets, mesure mobile) | **652/653** ; e2e vert ; budgets OK ; mesure 96/94/93 (1re tentative valide) ; responsive 0 défaut bloquant ; rouges : `recette-matrice` (11 références de lignes décalées → recalées) et le spec `carte-b3` sombre (repère d'Explorer non apparu en 30 s ; ni Explorer ni la carte touchés ; vert en clair ; déjà intermittent au lot 12b) |
+| 804 | `15f043bc7` | rejeu : `recette-matrice` + responsive complet | **vert** : 1/1, responsive 249 specs passés, 196 résultats, 0 défaut |
 
 Les moitiés B sont parties sur des branches jumelles (`avis/phase2-b`, puis `avis/phase2-c`) pour tourner en même temps que
 les moitiés A sans s'annuler (la vérification annule le run en cours d'une même branche) ; elles sont à supprimer.
 
 ## 5. Poids et mesure mobile
 
-[[POIDS]]
+Avant : run complet de main 782 (`2a02223f1`, 2e tentative). Après : run complet 799 (`d1696243d`). Budgets jamais relevés.
+
+| Route | Fichiers avant → après | JavaScript gzip avant → après | Écart | Budget | Statut |
+|---|---|---|---|---|---|
+| `/` | 18 → 18 | 215 587 → 215 615 o | +28 o | 226 342 o | OK |
+| `/events/[id]` | 17 → 17 | 224 522 → 224 582 o | +60 o | 233 316 o | OK |
+| `/tickets` | 20 → 20 | 240 960 → 241 013 o | +53 o | 250 417 o | OK |
+| `/controller/scanner` | 16 → 16 | 225 251 → 225 323 o | +72 o | 234 911 o | OK |
+| `/billet/hors-ligne` | 15 → 15 | 214 201 → 214 229 o | +28 o | 224 268 o | OK |
+| `/explore` | 19 → 19 | 226 214 → 226 242 o | +28 o | 235 712 o | OK |
+
+Mesure mobile (Lighthouse, médiane de 5 passages, seuil 90 ; 1re tentative valide) :
+
+| Page | Avant (782) | Après (799) |
+|---|---|---|
+| Accueil | 94 | **96** (TBT 230 ms) |
+| Fiche d'un événement | 93 | **94** (TBT 255 ms) |
+| Mes billets | 93 | **93** (TBT 313 ms) |
+| Réaction au toucher | 88 ms | 96 ms (seuil < 200 ms) |
+
+Responsive (run 799) : 196 résultats (page × thème), **0 défaut bloquant** (public 33 pages, administration 20,
+organisatrice 40, scanner 5).
 
 ## 6. Essais pour un non-développeur
 
