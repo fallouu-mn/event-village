@@ -1,0 +1,131 @@
+TAP version 13
+[CV12B] G1. autre compte sur 66fb3072-a660-411b-ab0d-23fbe832171e : {"suivi":404,"code":404,"nouveauCode":404,"annulation":404,"paiement":404,"solde":404} ; corps du code : {"success":false,"error":"Commande introuvable.","code":"ORDER_NOT_FOUND"}
+# Subtest: G1 — accès à la commande d’un autre compte
+    # Subtest: suivi, code, nouveau code, annulation, paiement et solde : 404, rien d’écrit ; Mes commandes : les siennes seulement
+    ok 1 - suivi, code, nouveau code, annulation, paiement et solde : 404, rien d’écrit ; Mes commandes : les siennes seulement
+      ---
+      duration_ms: 264.273479
+      type: 'test'
+      ...
+    1..1
+ok 1 - G1 — accès à la commande d’un autre compte
+  ---
+  duration_ms: 735.732775
+  type: 'suite'
+  ...
+[CV12B] G2. supplément 500 → 900 : devis 5250 ; création HTTP 409 {"success":false,"error":"Le prix de votre commande a changé : 6 090 F CFA. Vérifiez avant de payer.","code":"ORDER_PRICE_CHANGED","total":6090,"toPayNow":6090}
+# Subtest: G2 — argent lu en base
+    # Subtest: supplément changé entre le devis et la commande : refus avec le nouveau total, rien de créé
+    ok 1 - supplément changé entre le devis et la commande : refus avec le nouveau total, rien de créé
+      ---
+      duration_ms: 47.426293
+      type: 'test'
+      ...
+[CV12B] G2. zone 500 → 1 500 : devis 3675 ; création HTTP 409 {"success":false,"error":"Le prix de votre commande a changé : 4 725 F CFA. Vérifiez avant de payer.","code":"ORDER_PRICE_CHANGED","total":4725,"toPayNow":4725}
+    # Subtest: frais de zone changés entre le devis et la commande : refus, rien de créé
+    ok 2 - frais de zone changés entre le devis et la commande : refus, rien de créé
+      ---
+      duration_ms: 35.195854
+      type: 'test'
+      ...
+[CV12B] G2. plafond : statuts [201,201,201,429] ; 4e : {"success":false,"error":"Vous avez déjà 3 commandes non payées. Payez-en une ou attendez qu’elle se termine.","code":"TOO_MANY_UNPAID"}
+    # Subtest: plafond de 3 commandes non payées : la 4e est refusée par la route
+    ok 3 - plafond de 3 commandes non payées : la 4e est refusée par la route
+      ---
+      duration_ms: 231.079898
+      type: 'test'
+      ...
+    1..3
+ok 2 - G2 — argent lu en base
+  ---
+  duration_ms: 314.085392
+  type: 'suite'
+  ...
+[CV12B] G3. deux annulations : HTTP 200 / 409 ; affiché 4200 ; remboursements [4200] ; refunded_amount 4200
+# Subtest: G3 — annulation sous concurrence
+    # Subtest: deux annulations simultanées : une seule, un remboursement égal au montant affiché
+    ok 1 - deux annulations simultanées : une seule, un remboursement égal au montant affiché
+      ---
+      duration_ms: 83.866992
+      type: 'test'
+      ...
+[CV12B] G3. annulation ∥ acceptation : client HTTP 200, partenaire HTTP 409 ; état ANNULEE_CLIENT ; payé 5250 ; remboursements [5250]
+    # Subtest: annulation pendant l’acceptation de la partenaire : état cohérent, remboursement égal au payé
+    ok 2 - annulation pendant l’acceptation de la partenaire : état cohérent, remboursement égal au payé
+      ---
+      duration_ms: 78.741296
+      type: 'test'
+      ...
+    1..2
+ok 3 - G3 — annulation sous concurrence
+  ---
+  duration_ms: 163.052406
+  type: 'suite'
+  ...
+[CV12B] G4.
+  passé : HTTP 409 TOO_SOON « La préparation prend 30 minutes : choisissez une heure plus tardive, ou « au plus tôt ». »
+  au-delà de 7 jours : HTTP 409 TOO_FAR « Choisissez une heure dans les 7 jours à venir. »
+  hors du quart d’heure : HTTP 400 INVALID_TIME « Choisissez une heure au quart d’heure près (par exemple 12:00, 12:15 ou 12:30). »
+  hors horaires : HTTP 409 OUTSIDE_HOURS « L’établissement n’est pas ouvert à cette heure-là. Choisissez une autre heure. »
+  zone inactive : HTTP 409 ZONE_NOT_FOUND « Choisissez une zone de livraison de cet établissement. »
+  zone archivée : HTTP 409 ZONE_NOT_FOUND « Choisissez une zone de livraison de cet établissement. »
+  minimum de zone : HTTP 409 BELOW_MINIMUM « Le minimum de commande pour la zone « Plateau cv12b » est de 2 000 F CFA. »
+  table d’un autre établissement : HTTP 409 TABLE_NOT_FOUND « Cette table n’existe pas dans cet établissement. »
+# Subtest: G4 — heure et mode
+    # Subtest: passé, au-delà de 7 jours, hors du quart d’heure, hors horaires, zone inactive ou archivée, minimum, table d’un autre établissement : refusés
+    ok 1 - passé, au-delà de 7 jours, hors du quart d’heure, hors horaires, zone inactive ou archivée, minimum, table d’un autre établissement : refusés
+      ---
+      duration_ms: 119.820261
+      type: 'test'
+      ...
+    1..1
+ok 4 - G4 — heure et mode
+  ---
+  duration_ms: 119.971298
+  type: 'suite'
+  ...
+[CV12B] G5. droits : [{"role":"anon","schema_usage":false,"codes_select":false,"key_select":false,"decrypt_exec":false,"issue_exec":false,"reveal_exec":false},{"role":"authenticated","schema_usage":false,"codes_select":false,"key_select":false,"decrypt_exec":false,"issue_exec":false,"reveal_exec":false},{"role":"service_role","schema_usage":false,"codes_select":false,"key_select":false,"decrypt_exec":false,"issue_exec":false,"reveal_exec":true}]
+[CV12B] G5. clé de service sur private.order_codes par la REST : Invalid schema: private
+# Subtest: G5 — code de remise
+    # Subtest: tables et clé private, déchiffrement et lecture fermés aux rôles de l’API
+    ok 1 - tables et clé private, déchiffrement et lecture fermés aux rôles de l’API
+      ---
+      duration_ms: 26.205826
+      type: 'test'
+      ...
+[CV12B] G5. code 1748 : lignes private avant 1, après annulation 0 ; lecture après : HTTP 409 {"success":false,"error":"Le code apparaît quand la commande est prête à retirer ou en route.","code":"NO_CODE_YET"} ; traces examinées 32, contenant le code 0 []
+    # Subtest: annulation par Event Village pendant « prête » : code effacé ; jamais dans la cloche ni le journal
+    ok 2 - annulation par Event Village pendant « prête » : code effacé ; jamais dans la cloche ni le journal
+      ---
+      duration_ms: 126.096608
+      type: 'test'
+      ...
+    1..2
+ok 5 - G5 — code de remise
+  ---
+  duration_ms: 152.480182
+  type: 'suite'
+  ...
+[CV12B] G6. produits ["À vérifier cv12b:false","Gardé cv12b:true"] ; zones [] ; à vérifier {"id":"7967410a-5480-4488-a20c-3de5060cbc36","name":"À vérifier cv12b","description":null,"price":1000,"image":null,"categoryId":null,"availability":"DISPONIBLE","regulated":false,"inReview":true,"orderable":false,"daily":false,"portionsLeft":null,"portionsTotal":null,"options":[]} ; clés en trop [] ; champs internes dans la réponse brute []
+# Subtest: G6 — carte des plats
+    # Subtest: archivés exclus, « à vérifier » non commandable, aucun champ interne
+    ok 1 - archivés exclus, « à vérifier » non commandable, aucun champ interne
+      ---
+      duration_ms: 67.480697
+      type: 'test'
+      ...
+    1..1
+ok 6 - G6 — carte des plats
+  ---
+  duration_ms: 67.598493
+  type: 'suite'
+  ...
+1..6
+# tests 10
+# suites 6
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1563.060452
