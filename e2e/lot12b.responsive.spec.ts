@@ -320,7 +320,9 @@ for (const theme of THEMES) {
                     // 9. Chaque étape, avancée par la partenaire
                     await partnerStep(data, orderId, 'ACCEPTER');
                     await stepReached(page, orderId, 'ACCEPTEE');
-                    await expect(page.getByTestId('heure-estimee')).toContainText('Prévue vers');
+                    // Lot stabilité (run 784, test lancé vers 23 h 55) : heure estimée après minuit = « Prévue le <date> vers … »
+                    // (OrderTracking, whenText) ; le test acceptait seulement la forme du jour même
+                    await expect(page.getByTestId('heure-estimee')).toContainText(/Prévue (le .+ )?vers \d{2} h \d{2}/);
                     await settle(page);
                     await shot(page, 'suivi-acceptee', w.width, theme.key);
                     await partnerStep(data, orderId, 'PREPARER');
