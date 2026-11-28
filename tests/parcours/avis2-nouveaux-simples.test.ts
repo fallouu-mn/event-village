@@ -160,7 +160,7 @@ describe('A8 et A9 — caisse validée, poste changé', () => {
         assert.equal(rows.length, 2, `un avis pour la porte : ${describeRows(rows)}`);
         assert.deepEqual(rows[1].template_data.changes, ['GATE']);
         const r2 = renderNotification('CONTROLLER_POST_CHANGED', 'IN_APP', rows[1].template_data, CTX);
-        assert.match(r2.channel === 'IN_APP' ? r2.content : '', /vous contrôlez maintenant la porte Porte 2\.$/);
+        assert.match(r2.channel === 'IN_APP' ? r2.content : '', /votre porte est maintenant « Porte 2 »\.$/);
         assert.equal(r2.channel === 'IN_APP' && r2.actionUrl, '/controller/scanner');
 
         const self = await service.rpc('controller_gate_select', { p: { actor_id: M.ctrl.userId, event_id: M.ev.eventId, gate_id: M.gate1 } });

@@ -3200,7 +3200,7 @@ const CATALOG = {
             const parts: string[] = [];
             if (changes.includes('GATE')) {
                 const gate = optText(d, 'gate_name');
-                parts.push(gate ? `vous contrôlez maintenant la porte ${gate}` : 'vous pouvez contrôler à toutes les portes');
+                parts.push(gate ? `votre porte est maintenant ${q(gate)}` : 'vous pouvez contrôler à toutes les portes');
             }
             if (changes.includes('CASH')) parts.push(bool(d, 'can_accept_cash') ? 'vous pouvez maintenant encaisser en espèces' : 'vous ne pouvez plus encaisser en espèces');
             if (parts.length === 0) throw new TemplateDataError('changes', 'ne contient ni GATE ni CASH');
