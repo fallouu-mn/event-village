@@ -176,7 +176,20 @@ définition), 1 039 messages ; erreurs affichées ; exports : **0 faute** (exéc
 
 ## 4. Runs
 
-[[RUNS]]
+Résultats lus par l'API GitHub et les fichiers bruts de `ci-results` (jamais par git).
+
+| Run | Commit | Contenu | Résultat |
+|---|---|---|---|
+| 785 | `c8467d02b` | rapide n°1 (2b), 47 suites | 46/47 ; typecheck et lint OK ; rouge : mon test 2b.2 (heure d'envoi calculée avant la reprise) → corrigé |
+| 786 | `dadddfacf` | rapide n°2 (2c), 172 suites | 170/172 ; rouges : bouton d'email imposé (« Ouvrir Event Village »), raisons « sans objet » des liens → corrigés |
+| 788 | `7f77df887` | rapide n°3 (2a à 2h), 211 suites | **coupé à 60 min** (liste trop longue), aucun journal de suites |
+| 791, 792 | `0aded0997`, `3134434de` | rapide n°4 en deux moitiés (106 + 107 suites), en parallèle | 59/106 et 61/107 : deux cascades d'invariants causées par mes tests (commission rendue disponible trop tôt : w18 ; numéro changé sans l'authentification : v), 2 erreurs de compilation dans mes tests, une trentaine d'attentes de canaux exacts, un défaut de B14 (notification des ventes reportée la nuit qui retenait la série) → corrigés (`d4ad50569`) |
+| 795, 794 | `f2e1b05ce`, `e90c881ac` | rapide n°5 en deux moitiés | 103/106 et 106/107 ; typecheck et lint OK ; rouges : 3 attentes (nombre de lignes, SMS « billet reçu » au destinataire), un second défaut de B14 la nuit (cloche suivante décalée à 07 h 15) → corrigés (`d5604f64e`) |
+| 798 | `d5604f64e` | rapide ciblé, 15 suites (regroupements, attentes corrigées) | **15/15 vert**, typecheck et lint OK |
+| [[RUN_COMPLET]] | | run complet unique | [[RESULTAT_COMPLET]] |
+
+Les moitiés B sont parties sur des branches jumelles (`avis/phase2-b`, puis `avis/phase2-c`) pour tourner en même temps que
+les moitiés A sans s'annuler (la vérification annule le run en cours d'une même branche) ; elles sont à supprimer.
 
 ## 5. Poids et mesure mobile
 
