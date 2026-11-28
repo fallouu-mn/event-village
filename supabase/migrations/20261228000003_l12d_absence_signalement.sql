@@ -8,7 +8,8 @@
 --  - « Signaler un problème » : le client, après le début de la préparation ; l'équipe et l'établissement sont prévenus ;
 --    aucun remboursement automatique.
 --  1. aides private.order_admin_allowed(compte, droits) et private.order_admin_role(compte) : compte ACTIF, super-
---     administrateur (user_roles) ou administrateur avec l'un des droits (has_admin_permission, comme order_cancel) ;
+--     administrateur ou administrateur avec l'un des droits (admin_can du lot 9 bis : user_roles et admin_permissions,
+--     jamais users.role) ;
 --  2. order_delivery_step(p) : APPEL (appel du client compté, un appel compte s'il suit le précédent d'au moins
 --     30 secondes) et ABSENT (deux appels au moins, une fois par commande) ; livreur de la commande (membre ACTIF) ou
 --     partenaire propriétaire ; commande à livrer, en route ; avis au client (4 canaux) et à l'établissement ;
@@ -39,11 +40,10 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
+    -- Règle 1B.8 (lot 9 bis) : user_roles et admin_permissions par admin_can, jamais users.role
     SELECT p_actor IS NOT NULL
        AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = p_actor AND u.status::text = 'ACTIF')
-       AND (EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = p_actor AND ur.role::text = 'SUPERADMIN')
-            OR (EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = p_actor AND ur.role::text = 'ADMIN')
-                AND EXISTS (SELECT 1 FROM unnest(p_perms) x WHERE public.has_admin_permission(p_actor, x))));
+       AND EXISTS (SELECT 1 FROM unnest(p_perms) x WHERE public.admin_can(p_actor, x));
 $$;
 
 CREATE OR REPLACE FUNCTION private.order_admin_role(p_actor uuid)
