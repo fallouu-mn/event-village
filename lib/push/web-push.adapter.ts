@@ -96,8 +96,9 @@ export class WebPushAdapter implements PushAdapter {
         } catch (err) {
             const name = err instanceof Error ? err.name : '';
             const error = name === 'TimeoutError' || name === 'AbortError'
-                ? `Délai dépassé vers le service push (${timeoutMs()} ms)`
-                : `Service push injoignable : ${errorText(err)}`;
+                // Contre-vérification du lot « Avis », phase 2 (T7) : « push » réservé à l'administration (M16)
+                ? `Délai dépassé vers le service des notifications du téléphone (${timeoutMs()} ms)`
+                : `Service des notifications du téléphone injoignable : ${errorText(err)}`;
             console.warn(`[push] ${error}`);
             return { outcome: 'RETRY', statusCode: null, error };
         }

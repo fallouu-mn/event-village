@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
     const params = new URL(req.url).searchParams;
     const parsed = EventId.safeParse(params.get('event_id') ?? params.get('eventId'));
     if (!parsed.success) {
-        return NextResponse.json({ error: 'event_id requis (identifiant d’événement).', code: 'INVALID_EVENT' }, { status: 400 });
+        // Contre-vérification du lot « Avis », phase 2 (T7) : phrase simple, sans identifiant
+        return NextResponse.json({ error: 'Événement manquant. Rechargez la page.', code: 'INVALID_EVENT' }, { status: 400 });
     }
     const eventId = parsed.data;
     const ficheRefused = await ownEventFicheRefusal(session.user, eventId);

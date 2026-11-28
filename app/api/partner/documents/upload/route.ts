@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
         const docType = formData.get('docType');
 
         if (!isDocType(docType)) {
-            return NextResponse.json({ error: 'Type de pièce invalide (id_card ou business_doc).' }, { status: 400 });
+            // Contre-vérification du lot « Avis », phase 2 (T7) : phrase simple, sans identifiant
+            return NextResponse.json({ error: 'Type de pièce inconnu : choisissez une pièce d’identité ou un document de l’entreprise.' }, { status: 400 });
         }
         if (!(file instanceof File)) {
             return NextResponse.json({ error: 'Aucun fichier fourni.' }, { status: 400 });

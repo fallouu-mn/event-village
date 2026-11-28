@@ -19,16 +19,16 @@ export const dynamic = 'force-dynamic';
 
 /** Lot 9 bis (R41, B64) : une affectation et son droit d'encaisser ; absent, le droit actuel est gardé. */
 const AssignmentSchema = z.object({
-    event_id:        z.string().uuid('event_id invalide.'),
+    event_id:        z.string().uuid('Événement introuvable. Rechargez la page.'), // Contre-vérification du lot « Avis », phase 2 (T7) : phrase simple, sans identifiant
     can_accept_cash: z.boolean().optional(),
 }).strict();
 
 const UpdateAssignmentsSchema = z.object({
-    controller_id:   z.string().uuid('controller_id invalide.').optional(),
+    controller_id:   z.string().uuid('Contrôleur introuvable. Rechargez la page.').optional(), // Contre-vérification du lot « Avis », phase 2 (T7) : phrase simple, sans identifiant
     controllerId:    z.string().uuid('Contrôleur introuvable. Rechargez la page.').optional(),
     assignments:     z.array(AssignmentSchema).max(200, '200 affectations au plus.').optional(),
     // Lot 9 sexies : listes bornées comme `assignments` (sans borne, zod accumule une erreur par élément)
-    event_ids:       z.array(z.string().uuid('event_id invalide.')).max(200, '200 affectations au plus.').optional(),
+    event_ids:       z.array(z.string().uuid('Événement introuvable. Rechargez la page.')).max(200, '200 affectations au plus.').optional(), // Contre-vérification du lot « Avis », phase 2 (T7) : phrase simple, sans identifiant
     eventIds:        z.array(z.string().uuid('Événement introuvable. Rechargez la page.')).max(200, '200 affectations au plus.').optional(),
     eventId:         z.string().uuid('Événement introuvable. Rechargez la page.').optional(),
     can_accept_cash:   z.boolean().optional(),
@@ -96,7 +96,8 @@ export async function PATCH(req: NextRequest) {
         // Lot 9 bis (R41, B64) : un seul interrupteur pour toutes les affectations n'est plus accepté
         if (global_cash) {
             return NextResponse.json({
-                error: 'Le droit d’encaisser se règle événement par événement : envoyez assignments avec can_accept_cash pour chacun.',
+                // Contre-vérification du lot « Avis », phase 2 (T7) : phrase simple, sans identifiant
+                error: 'Le droit d’encaisser se règle événement par événement : choisissez-le pour chaque événement.',
                 code: 'INVALID_FIELD',
                 field: 'can_accept_cash',
             }, { status: 400 });

@@ -199,6 +199,11 @@ describe('d. parcours réel : le contrôle des captures applique le même motif'
 export const EXTRA_RE = /(?<![\p{L}\p{N}_])(?:OTP|[Pp]ayload|JSON|[Ww]ebhook|[Tt]imeout|ID|Supabase|MTarget|Resend|VAPID|service_role|Loading|Submit|Cancel|Save|Delete|Retry|Success|Failed|Pending|Unknown|Something went wrong|Not found|Invalid|Required)(?![\p{L}\p{N}_])/u;
 const PUSH_RE = /(?<![\p{L}\p{N}_])[Pp]ush(?![\p{L}\p{N}_])/u;
 const CAMEL_RE = /(?<![\p{L}\p{N}_./-])[a-z]+[A-Z][A-Za-z]*(?![\p{L}\p{N}_(])/u;
+/**
+ * Contre-vérification de la phase 2 (T7) : identifiant en minuscules avec tiret bas (event_id, p_user_id) dans une PHRASE (texte
+ * avec une espace). Seul, un tel mot est un nom de colonne (`.lt('created_at', …)`, lu comme un argument zod) ou un code machine.
+ */
+export const SNAKE_RE = /(?<![\p{L}\p{N}_./-])[a-z][a-z0-9]*_[a-z0-9_]+(?![\p{L}\p{N}_])/u;
 
 /**
  * Exceptions justifiées du bloc e (§ 4.4, point 6) : `fichier|texte exact` → raison. Les noms de prestataires (SamirPay, Wave,
@@ -213,6 +218,131 @@ const EXCEPTIONS_E = new Map<string, string>([
     ['20261130000004_l12a_devis_commande.sql|NO_PORTIONS_LEFT', 'code interne (SQLERRM devient « code ») ; la réponse porte « Plus assez de portions du plat du jour. »'],
     ['20261130000004_l12a_devis_commande.sql|OUT_OF_STOCK', 'code interne (SQLERRM devient « code ») ; la réponse porte « Un produit du panier vient d’être épuisé. »'],
     ['20261226000003_l12b_garde_prix.sql|ORDER_PRICE_CHANGED', 'code interne de l’exception attrapée ; la réponse porte le nouveau montant et une phrase française'],
+    // Contre-vérification du lot « Avis », phase 2 (T7) : messages SQL lus depuis par le bloc (RAISE EXCEPTION '…', identifiant
+    // en snake_case dans une phrase) ; chacun vérifié : aucun n'arrive à l'écran (route : journal et phrase française à elle,
+    // ou signal attrapé dans la fonction). Un message qui pourrait arriver à l'écran reçoit une phrase simple, jamais ici.
+    ["20261031000011_lot1c9_quotas.sql|quota_reserve : au moins une règle requise",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261031000011_lot1c9_quotas.sql|quota_reserve : règle incomplète …",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261031000013_lot2_reservations.sql|stock_reservations : changement de catégorie interdit",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000003_lot3_moteur.sql|finance_compute : cible … non prise en charge",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000003_lot3_moteur.sql|finance_compute : aucune ligne",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000003_lot3_moteur.sql|finance_compute : opérateur … inconnu",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000003_lot3_moteur.sql|finance_compute : ligne invalide (prix …, quantité …)",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000004_lot3_grand_livre.sql|fin_payment_sale_credit : partenaire … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000005_lot3_remboursements.sql|refund_request : paiement … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000005_lot3_remboursements.sql|refund_request : nature … inconnue",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261101000011_lot4_caisse.sql|CONTROLLER_HAS_OPEN_SHIFT : le contrôleur … a une caisse ouverte sur l'événement …",
+        "refus reconnu par lib/shifts/shift.service.ts (isControllerRemovalBlocked) : l’écran reçoit « Ce contrôleur a une caisse ouverte : clôturez-la avant de le retirer. »"],
+    ["20261101000011_lot4_caisse.sql|CONTROLLER_HAS_OPEN_SHIFT : le contrôleur … a une caisse ouverte",
+        "refus reconnu par lib/shifts/shift.service.ts (isControllerRemovalBlocked) : l’écran reçoit « Ce contrôleur a une caisse ouverte : clôturez-la avant de le retirer. »"],
+    ["20261103000006_lot6_pros_admin.sql|Le type … est un envoi synchrone : il se journalise par notification_sync_log.",
+        "garde de programmation (type synchrone mis en file par erreur) : appel du serveur seul, journalisé, jamais affiché"],
+    ["20261108000004_lot9_compte.sql|client_payments_list : user_id requis",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261109000005_lot9bis_samirpay.sql|payment_release : statut cible invalide …",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261109000005_lot9bis_samirpay.sql|PRICE_BELOW_MINIMUM",
+        "refus reconnu par lib/events/event.service.ts (priceBelowMinimum) : l’écran reçoit le prix minimum en phrase française"],
+    ["20261109000011_lot9bis_textes.sql|quota_release : tableau de règles requis",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261109000011_lot9bis_textes.sql|quota_release : règle incomplète …",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261110000007_lot9ter_evenements.sql|finance_account_balance : compte … inconnu",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261111000004_lot9quater_email.sql|Le type … est un envoi synchrone : il se journalise par notification_sync_log.",
+        "garde de programmation (type synchrone mis en file par erreur) : appel du serveur seul, journalisé, jamais affiché"],
+    ["20261111000005_lot9quater_argent.sql|cashout_finalize : issue … inconnue",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261111000005_lot9quater_argent.sql|cashout_finalize : envoi … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261111000005_lot9quater_argent.sql|cashout_finalize : remboursement de l'envoi … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261111000005_lot9quater_argent.sql|cashout_finalize : retrait de l'envoi … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261111000005_lot9quater_argent.sql|refund_request : paiement … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261111000005_lot9quater_argent.sql|refund_request : nature … inconnue",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261115000002_finition1_equipe.sql|controller_invitation_notify_partner : type inconnu …",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261115000009_cvf1_verdict_hors_plage.sql|ticket_scan : méthode … inconnue",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261115000009_cvf1_verdict_hors_plage.sql|ticket_scan : verdict de zone absent pour le billet … (statut …)",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261117000003_f3a_synthese.sql|finance_admin_owed : compte … inconnu",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261117000004_f3a_solde.sql|finance_balance_record : solde absent",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261118000001_f3b_todo.sql|admin_todo : liste des lignes absente",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261118000001_f3b_todo.sql|admin_todo : ligne inconnue (…)",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261119000005_f2b_zones_creation.sql|EVENT_ZONES_REFUSED",
+        "signal interne attrapé dans la même fonction (annulation du bloc), jamais renvoyé : la réponse porte sa phrase française"],
+    ["20261119000007_f2b_apercu_avis.sql|EVENT_UPDATE_PREVIEW",
+        "signal interne attrapé dans la même fonction (annulation du bloc), jamais renvoyé : la réponse porte sa phrase française"],
+    ["20261120000007_f3d_cv_revocation.sql|revoke_user_sessions : p_user_id requis",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261122000005_l10a_annulation.sql|hall_refund_payment : paiement de salle … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261122000005_l10a_annulation.sql|hall_refund_payment : part … hors bornes",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261123000106_l11a_annulation.sql|table_refund_payment : paiement de table … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261123000106_l11a_annulation.sql|table_refund_payment : part … hors bornes",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261129000003_l11b_reservations.sql|table_short_code : aucun code libre après 20 essais",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261129000008_l11b_cv_plan_tout_ou_rien.sql|venue_plan_set : plan refusé",
+        "signal interne attrapé dans la même fonction (annulation du bloc), jamais renvoyé : la réponse porte sa phrase française"],
+    ["20261130000005_l12a_paiement.sql|calculate_referral_commissions : paiement … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261130000006_l12a_etapes.sql|order_refund_payment : paiement de commande … introuvable",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261130000006_l12a_etapes.sql|order_refund_payment : part … hors bornes",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261130000008_l12a_releves.sql|finance_admin_earned : période vide ou inversée (… → …)",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261130000008_l12a_releves.sql|finance_admin_payments : statut … inconnu",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261130000008_l12a_releves.sql|finance_admin_payments : période vide ou inversée (… → …)",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|stock_reservations : la table d'une attente ne change pas.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|stock_reservations : une table s'attend par les fonctions des tables d'un événement, une à la fois.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|ticket_categories : un type de table se crée par les fonctions des tables d'un événement.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|ticket_categories : un type de table se supprime par les fonctions des tables d'un événement.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|ticket_categories : le genre d'une catégorie (billet ou table) ne change pas.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|ticket_categories : prix et places d'un type de table figés dès la première vente.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000002_l11c_schema.sql|ticket_categories : un type de table se modifie par les fonctions des tables d'un événement.",
+        "garde de la base (déclencheur) : les écrans passent par les fonctions des tables d’un événement ; un refus devient la phrase générique de la route, jamais ce texte"],
+    ["20261201000003_l11c_configuration.sql|event_table_type_save : refus",
+        "signal interne attrapé dans la même fonction (annulation du bloc), jamais renvoyé : la réponse porte sa phrase française"],
+    ["20261201000003_l11c_configuration.sql|event_tables_save : refus",
+        "signal interne attrapé dans la même fonction (annulation du bloc), jamais renvoyé : la réponse porte sa phrase française"],
+    ["20261201000004_l11c_vente.sql|event_table_checkout : opérateur obligatoire pour un paiement",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261201000004_l11c_vente.sql|event_table_issue : attente … du paiement … introuvable ou sans titulaire",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261201000004_l11c_vente.sql|checkout_create_payment : opérateur obligatoire pour un paiement",
+        "garde interne d’une fonction appelée par le serveur seul : l’erreur est journalisée et la route répond par sa propre phrase, jamais ce texte"],
+    ["20261215000002_l11cc_cv_correctifs.sql|event_table_copy : refus",
+        "signal interne attrapé dans la même fonction (annulation du bloc), jamais renvoyé : la réponse porte sa phrase française"],
 ]);
 
 /** Fichiers d'exploitation, jamais lus par une personne (§ 4.3, § 4.4 point 6). */
@@ -252,6 +382,8 @@ function faultsOfE(text: string, rel: string): string[] {
     }
     const c = CAMEL_RE.exec(text);
     if (c) out.push(`identifiant « ${c[0]} »`);
+    const s = SNAKE_RE.exec(text);
+    if (s && /\s/.test(text)) out.push(`identifiant « ${s[0]} »`);
     return out;
 }
 
@@ -270,6 +402,44 @@ function textOf(node: ts.Node): string | null {
     return null;
 }
 
+/** Constructeurs dont le premier argument est le corps renvoyé tel quel (texte, CSV). */
+const RESPONSE_CTORS = new Set(['Response', 'NextResponse']);
+const JOIN_OPS = new Set([ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.PlusToken]);
+
+/**
+ * Contre-vérification de la phase 2 (T7) : textes qu'une expression peut renvoyer — littéral, branches d'un ternaire,
+ * côtés de `??`, `||`, `&&` et `+`, parenthèses, `as`, `!`, et constante du même fichier (suivie une fois).
+ */
+function shownTexts(node: ts.Node, consts: Map<string, ts.Expression>, seen: Set<string> = new Set()): ts.Node[] {
+    if (textOf(node) !== null) return [node];
+    if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) {
+        return shownTexts(node.expression, consts, seen);
+    }
+    if (ts.isConditionalExpression(node)) return [...shownTexts(node.whenTrue, consts, seen), ...shownTexts(node.whenFalse, consts, seen)];
+    if (ts.isBinaryExpression(node) && JOIN_OPS.has(node.operatorToken.kind)) {
+        return [...shownTexts(node.left, consts, seen), ...shownTexts(node.right, consts, seen)];
+    }
+    if (ts.isIdentifier(node) && consts.has(node.text) && !seen.has(node.text)) {
+        seen.add(node.text);
+        return shownTexts(consts.get(node.text)!, consts, seen);
+    }
+    return [];
+}
+
+/** Constantes du fichier (`const X = …`), pour suivre `{ error: X }`. */
+function constantsOf(sf: ts.SourceFile): Map<string, ts.Expression> {
+    const out = new Map<string, ts.Expression>();
+    const walk = (node: ts.Node): void => {
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer
+            && ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
+            out.set(node.name.text, node.initializer);
+        }
+        ts.forEachChild(node, walk);
+    };
+    walk(sf);
+    return out;
+}
+
 describe('e. routes d’API, lib, hooks : aucun mot technique dans un message renvoyé ou affiché', () => {
     test('propriétés error, message, details ; PublicError et refus ; messages zod (sans les journaux ni les fichiers d’exploitation)', () => {
         const faults: string[] = [];
@@ -278,7 +448,8 @@ describe('e. routes d’API, lib, hooks : aucun mot technique dans un message re
         for (const rel of files) {
             const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
             const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, rel.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-            const report = (node: ts.Node): void => {
+            const consts = constantsOf(sf);
+            const reportOne = (node: ts.Node): void => {
                 const raw = textOf(node);
                 if (raw === null) return;
                 texts += 1;
@@ -288,6 +459,10 @@ describe('e. routes d’API, lib, hooks : aucun mot technique dans un message re
                     const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
                     faults.push(`${rel}:${line + 1} : ${f} — « ${clean.slice(0, 110)} »`);
                 }
+            };
+            // Contre-vérification de la phase 2 (T7) : chaque texte que l'expression peut renvoyer (ternaire, ??, constante…)
+            const report = (node: ts.Node): void => {
+                for (const t of shownTexts(node, consts)) reportOne(t);
             };
             const visit = (node: ts.Node, inLog: boolean): void => {
                 if (ts.isCallExpression(node)) {
@@ -300,9 +475,14 @@ describe('e. routes d’API, lib, hooks : aucun mot technique dans un message re
                     if (!inLog && SHOWN_CALLS.has(name) && node.arguments[0]) report(node.arguments[0]);
                 } else if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'PublicError' && node.arguments?.[0]) {
                     report(node.arguments[0]);
+                } else if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && RESPONSE_CTORS.has(node.expression.text) && node.arguments?.[0]) {
+                    // Contre-vérification de la phase 2 (T7) : corps texte d'une réponse (new Response('…'), export CSV)
+                    report(node.arguments[0]);
                 } else if (ts.isPropertyAssignment(node) && !inLog) {
                     const key = ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : '';
                     if (MESSAGE_PROPS.has(key)) report(node.initializer);
+                } else if (ts.isShorthandPropertyAssignment(node) && !inLog && MESSAGE_PROPS.has(node.name.text)) {
+                    report(node.name);
                 }
                 ts.forEachChild(node, (child) => visit(child, inLog));
             };
@@ -331,15 +511,21 @@ describe('e. routes d’API, lib, hooks : aucun mot technique dans un message re
         }
         const faults: string[] = [];
         let texts = 0;
-        const msgRe = /'message'\s*,\s*'((?:[^']|'')*)'|MESSAGE\s*=\s*(?:format\(\s*)?'((?:[^']|'')*)'/g;
+        // Contre-vérification de la phase 2 (T7) : aussi la forme classique RAISE EXCEPTION '…' et la clé « error » d'une
+        // réponse ; « % » seul (paramètre de RAISE) lu comme « … »
+        const msgRe = /'message'\s*,\s*'((?:[^']|'')*)'|MESSAGE\s*=\s*(?:format\(\s*)?'((?:[^']|'')*)'|RAISE\s+EXCEPTION\s+'((?:[^']|'')*)'|'error'\s*,\s*'((?:[^']|'')*)'/gi;
         for (const [fn, def] of last) {
             for (const m of def.body.matchAll(msgRe)) {
-                const msg = (m[1] ?? m[2] ?? '').replace(/''/g, '\'').replace(/%[sIL]/g, '…').trim();
+                const msg = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? '').replace(/''/g, '\'').replace(/%[sIL]?/g, '…').trim();
                 texts += 1;
                 if (!msg || EXCEPTIONS_E.has(`${def.file}|${msg}`)) continue;
+                // Clé « error » : un code seul (capitales) est le code machine que la route traduit ; une phrase est relue
+                if (m[4] !== undefined && /^[A-Z][A-Z0-9_]*$/.test(msg)) continue;
                 const found = [...faultsOf(msg)];
                 const x = EXTRA_RE.exec(msg);
                 if (x) found.push(`mot de développeur « ${x[0]} »`);
+                const s = SNAKE_RE.exec(msg);
+                if (s && /\s/.test(msg)) found.push(`identifiant « ${s[0]} »`);
                 for (const f of found) faults.push(`${fn} (${def.file}) : ${f} — « ${msg.slice(0, 110)} »`);
             }
         }
@@ -368,7 +554,8 @@ describe('e. routes d’API, lib, hooks : aucun mot technique dans un message re
     test('erreurs affichées : jamais `set…(err.message)` sans le garde-fou ; errorMessage() passe une erreur hors API au garde-fou', () => {
         const faults: string[] = [];
         const roots = ['app', 'components', 'hooks'];
-        const re = /\bset[A-Z]\w*\(\s*(?:err|error|e)\s+instanceof\s+Error\s*(?:&&\s*(?:err|error|e)\.message\s*)?\?\s*(?:err|error|e)\.message\b|\bset[A-Z]\w*\(\s*(?:err|error|e)\.message\s*\)/;
+        // Contre-vérification de la phase 2 (T7) : aussi `set…((err as Error).message)`, `set…(err?.message ?? …)`
+        const re = /\bset[A-Z]\w*\(\s*(?:err|error|e)\s+instanceof\s+Error\s*(?:&&\s*(?:err|error|e)\.message\s*)?\?\s*(?:err|error|e)\.message\b|\bset[A-Z]\w*\(\s*(?:err|error|e)\.message\s*\)|\bset[A-Z]\w*\(\s*(?:\(\s*(?:err|error|e)\s+as\s+\w+\s*\)|(?:err|error|e))\s*\??\.message\b/;
         const walk = (dir: string): void => {
             if (!fs.existsSync(path.join(ROOT, dir))) return;
             for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
