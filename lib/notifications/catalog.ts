@@ -3357,8 +3357,8 @@ function orderIssueReason(d: object): string {
     if (r === 'RETARD') return 'un retard';
     if (r === 'INCOMPLETE') return 'une commande incomplète';
     if (r === 'ERREUR') return 'une erreur dans la commande';
-    if (r === 'AUTRE') return 'un problème';
-    throw new TemplateDataError('reason', 'inconnu (RETARD, INCOMPLETE, ERREUR ou AUTRE attendu)');
+    // Autre motif (ou motif inconnu d'une ligne ancienne) : jamais un avis qui échoue
+    return 'un problème';
 }
 
 /** Lot 12a : remboursement annoncé au client, ou rien. */

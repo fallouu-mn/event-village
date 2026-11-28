@@ -7,7 +7,7 @@
  *
  * Données propres au spec (la graine de démonstration n'est pas touchée) : un établissement neuf de la partenaire de
  * démonstration « organisateur » (session déjà préparée), validé, ouvert 24 h sur 24, qui prend des commandes (livraison, retrait, paiement à la
- * remise : aucun paiement réel) ; des plats avec allergènes et piment ; un livreur actif (compte neuf), invité aussi par
+ * remise : aucun paiement réel) ; des plats avec allergènes et piment ; un livreur actif (fumee-client), invité aussi par
  * « organisateur2 » (invitation en attente), qui passe aussi deux commandes à retirer comme client ; des livraisons à chaque étape (prête, en route, client absent en attente,
  * client absent à décider : horloge avancée par une écriture LOCALE de la base, SUPABASE_DB_URL de .env.e2e, hôte local
  * vérifié) ; deux commandes en préparation du même compte, client cette fois (dont une signalée) ; une commande prévue demain dans une
@@ -17,9 +17,10 @@
  * features.tables_enabled (page des fermetures, sous la garde des tables) par e2e/support/tables-service.ts ; sous le verrou
  * des services (groupe « services »).
  *
- * UNE seule connexion dans tout le spec (le livreur, aussi client de ses deux commandes à retirer) : quota de 30 connexions
- * par adresse et par heure du job (PASSWORD_LOGIN_PER_IP_HOUR, run 789 : 429 au spec du 12c) ; partenaire et administration
- * reprennent les sessions préparées (organisateur, fumee-superadmin).
+ * AUCUNE connexion dans le spec : le quota de 30 connexions par adresse et par heure du job (PASSWORD_LOGIN_PER_IP_HOUR) est
+ * atteint par la préparation des sessions et les autres specs (runs 789 et 793 : 429). Sessions préparées reprises : le client
+ * du seed de test (fumee-client, lu par aucun autre spec du job responsive) est le livreur, et le client de ses deux
+ * commandes à retirer ; organisateur (partenaire) ; fumee-superadmin (administration).
  * Pour chaque thème (clair, sombre) et chaque largeur (390 et 1 440 px) : contrôle responsive (0 défaut bloquant) et
  * capture. Captures : .e2e-captures/captures-responsive/l12d-<écran>__<largeur>__<thème>.jpg (publiées sur ci-results).
  */
@@ -32,10 +33,10 @@ import { test, expect, projectContextOptions, type ThemeKey } from './support/fi
 import { E2E_OUTPUT_DIR, readDemoIds } from './support/demo-ids';
 import { createClientAccount, rpcOk, serviceClient, userIdByEmail, type ControllerAccount } from './support/service';
 import { runResponsiveChecks } from './support/responsive-checks';
-import { requireStorageState, TEST_PASSWORD } from './support/accounts';
+import { requireStorageState } from './support/accounts';
 import { openOrdersService, releaseOrdersService } from './support/orders-service';
 import { openTablesService, releaseTablesService } from './support/tables-service';
-import { APP_URL, e2eConfig } from './support/env';
+import { e2eConfig } from './support/env';
 import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
 
 test.describe.configure({ mode: 'serial' });
@@ -59,9 +60,6 @@ interface Seeded {
     orders: { prete: Ref; route: Ref; absent: Ref; equipe: Ref; prep: Ref; signale: Ref; fermeture: Ref };
 }
 
-type SessionState = Awaited<ReturnType<BrowserContext['storageState']>>;
-const sessions: Record<'courier', SessionState | null> = { courier: null };
-
 async function settle(page: Page): Promise<void> {
     await page.evaluate(() => document.fonts.ready.then(() => true));
     // Écrans relus toutes les 10 à 15 s : jamais « réseau au repos » ; attente bornée
@@ -80,27 +78,12 @@ async function checkLayout(page: Page, width: number, phone: boolean, label: str
     expect(r.blocking, `${label} (${width} px) : défauts bloquants\n${r.blocking.join('\n')}`).toEqual([]);
 }
 
-async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark', storageState?: string | SessionState): Promise<BrowserContext> {
+async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark', storageState?: string): Promise<BrowserContext> {
     const context = await browser.newContext({ ...projectContextOptions(testInfo), colorScheme: scheme, ...(storageState ? { storageState } : {}) });
     await context.addInitScript((value: string) => {
         try { window.localStorage.setItem('ev-theme', value); } catch { /* document opaque */ }
         document.cookie = `ev-theme=${value}; path=/`;
     }, scheme);
-    return context;
-}
-
-/** Contexte connecté : la première fois, une connexion (gardée sans le thème) ; ensuite la session reprise. */
-async function signedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark', who: keyof typeof sessions, identifier: string): Promise<BrowserContext> {
-    const context = await themedContext(browser, testInfo, scheme, sessions[who] ?? undefined);
-    if (!sessions[who]) {
-        const res = await context.request.post(`${APP_URL}/api/auth/login`, { data: { identifier, password: TEST_PASSWORD } });
-        expect(res.status(), `connexion de ${identifier} : ${await res.text()}`).toBe(200);
-        const state = await context.storageState();
-        sessions[who] = {
-            cookies: state.cookies.filter((c) => c.name !== 'ev-theme'),
-            origins: state.origins.map((o) => ({ ...o, localStorage: o.localStorage.filter((l) => l.name !== 'ev-theme') })),
-        };
-    }
     return context;
 }
 
@@ -126,6 +109,15 @@ async function localSql(text: string, params: unknown[]): Promise<void> {
     } finally {
         await c.end();
     }
+}
+
+/** Compte du seed de test (session préparée) : identifiant, numéro, prénom et nom. */
+async function fixtureAccount(email: string): Promise<ControllerAccount> {
+    const userId = await userIdByEmail(email);
+    const { data, error } = await serviceClient().from('users').select('phone, first_name, last_name').eq('id', userId).single();
+    if (error || !data?.phone) throw new Error(`[l12d] compte ${email} : ${error?.message ?? 'sans numéro'}`);
+    const phone = String(data.phone);
+    return { userId, email, phone, local: phone.replace(/^\+221/, ''), firstName: String(data.first_name ?? ''), lastName: String(data.last_name ?? '') };
 }
 
 function tomorrow(): string {
@@ -165,7 +157,7 @@ async function seed(superadmin: string): Promise<Seeded> {
     await save({ name: 'Pastels au thon', description: 'Chaussons frits, sauce très pimentée.', price: 2_000 }, ['POISSON', 'GLUTEN', 'OEUFS'], 3);
 
     // Livreur actif ; invitation en attente d'une autre partenaire (organisateur2)
-    const courier = await createClientAccount(`l12d-livreur-${STAMP}`);
+    const courier = await fixtureAccount(FIXTURE_USERS.CLIENT.email);
     const inv = await rpcOk('order_courier_invite', { actor_id: owner.userId, phone: courier.phone });
     await rpcOk('order_courier_respond', { actor_id: courier.userId, invitation_id: inv.invitation_id, accept: true });
     const other = await rpcOk('order_courier_invite', { actor_id: demo.organisateur2.userId, phone: courier.phone });
@@ -249,7 +241,7 @@ for (const theme of THEMES) {
             const d = seeded;
 
             // ── Livreur ───────────────────────────────────────────────────────────────────────────────────────
-            const cour = await signedContext(browser, testInfo, theme.scheme, 'courier', d.courier.email);
+            const cour = await themedContext(browser, testInfo, theme.scheme, requireStorageState('fumee-client'));
             const cp = await cour.newPage();
             for (const w of WIDTHS) {
                 await cp.setViewportSize({ width: w.width, height: w.height });
@@ -354,8 +346,8 @@ for (const theme of THEMES) {
             await org.close();
 
             // ── Cliente : signalement, bandeau de pause, allergènes ───────────────────────────────────────────
-            // Même compte que le livreur (session reprise : aucune connexion de plus)
-            const cli = await signedContext(browser, testInfo, theme.scheme, 'courier', d.courier.email);
+            // Même compte que le livreur (session préparée)
+            const cli = await themedContext(browser, testInfo, theme.scheme, requireStorageState('fumee-client'));
             const pp = await cli.newPage();
             for (const w of WIDTHS) {
                 await pp.setViewportSize({ width: w.width, height: w.height });
