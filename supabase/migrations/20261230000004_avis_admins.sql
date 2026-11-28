@@ -33,6 +33,10 @@ ON CONFLICT (type) DO UPDATE SET
 UPDATE public.notification_types SET channels = ARRAY['IN_APP','EMAIL','PUSH']
  WHERE type IN ('ADMIN_PRODUCT_REVIEW', 'ADMIN_PRODUCTS_REVIEW_BATCH', 'ADMIN_WITHDRAWAL_REJECTED', 'ADMIN_FINANCE_DEBT',
                 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP', 'ADMIN_SMS_CAP_NEW_NUMBERS');
+-- Contre-vérification (observation 5) : la notification ajoutée aux alertes d'argent et aux plafonds de SMS est reportée à la
+-- fin de la nuit, comme celle des autres alertes d'administration (B11) ; ces types n'ont pas de SMS
+UPDATE public.notification_types SET night_policy = 'DEFER'
+ WHERE type IN ('ADMIN_WITHDRAWAL_REJECTED', 'ADMIN_FINANCE_DEBT', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP', 'ADMIN_SMS_CAP_NEW_NUMBERS');
 
 -- 2. notif_admin_review_sms (recopie de 20261126000004_l10b_cv_correctifs.sql:317-421)
 CREATE OR REPLACE FUNCTION public.notif_admin_review_sms(p jsonb)

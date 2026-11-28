@@ -326,8 +326,10 @@ export class AdminService {
      */
     /**
      * Lot « Avis », phase 2 (D8) : avis ACCOUNT_ANONYMIZATION_NOTICE (SMS au numéro du compte, email à l'adresse vérifiée) mis
-     * en file puis envoyé tout de suite (envoyeur limité à ces lignes), avant l'effacement. Le numéro est écrit dans la ligne :
-     * une reprise après l'effacement vise encore l'ancien numéro. Échecs journalisés, jamais levés.
+     * en file puis envoyé tout de suite (envoyeur limité à ces lignes), juste avant l'effacement du profil. Une seule
+     * tentative (correctif T4 de la contre-vérification) : à la fin de l'anonymisation, les lignes encore en attente sont
+     * annulées (ACCOUNT_ANONYMIZED) et le numéro et l'adresse sont retirés de toutes les lignes du compte
+     * (scrubAnonymizedOutbox). Échecs de l'avis journalisés, jamais levés.
      */
     private static async noticeBeforeAnonymization(userId: string, phone: unknown): Promise<void> {
         const supabase = getServiceRoleClient();
@@ -352,6 +354,19 @@ export class AdminService {
         } catch (err) {
             console.error(`[AdminService] avis avant l'anonymisation du compte ${userId} non envoyé tout de suite :`, err instanceof Error ? err.message : String(err));
         }
+    }
+
+    /**
+     * Lot « Avis », phase 2 (correctif T4) : boîte d'envoi d'un compte anonymisé (notification_outbox_anonymize, migration
+     * 20261230000007). Les lignes encore en attente ou en cours d'envoi sont annulées (motif ACCOUNT_ANONYMIZED : aucune
+     * reprise après l'effacement), puis le numéro et l'adresse écrits dans les lignes du compte sont retirés (NULL). Rend
+     * l'erreur, jamais levée (nettoyage de la fin, remonté avec les autres retraits).
+     */
+    private static async scrubAnonymizedOutbox(userId: string): Promise<{ error: { message: string } | null }> {
+        const { data, error } = await getServiceRoleClient().rpc('notification_outbox_anonymize', { p_user: userId });
+        if (error) return { error };
+        if ((data as { ok?: boolean } | null)?.ok !== true) return { error: { message: JSON.stringify(data) } };
+        return { error: null };
     }
 
     static async anonymizeUser(targetUserId: string, actor: { id: string; role: string }): Promise<{ success: boolean; message: string }> {
@@ -384,10 +399,6 @@ export class AdminService {
         if (targetRoles.some((r) => ['SUPERADMIN', 'ADMIN', 'PARTENAIRE'].includes(r)) && !actorRoles.includes('SUPERADMIN')) {
             throw new PublicError('Seul un super-administrateur peut supprimer un compte administrateur ou partenaire.', 'SUPERADMIN_REQUIRED', 403);
         }
-
-        // Lot « Avis », phase 2 (D8, décision du 27/11) : SMS et email juste avant l'effacement (le numéro et l'adresse vont
-        // disparaître) ; un échec est journalisé et n'empêche pas l'anonymisation décidée par l'équipe.
-        if (targetUser) await AdminService.noticeBeforeAnonymization(targetUserId, targetUser.phone);
 
         // Lot 9 quater (A9 : AUD-33) : journal d'audit pseudonymisé AVANT l'effacement du profil (valeurs d'origine) :
         // numéros (forme à 9 chiffres), nom, prénom et adresse réelle remplacés par « [anonymisé] ».
@@ -437,6 +448,11 @@ export class AdminService {
         if (!(await revokeUserSessions(targetUserId, { reason: 'USER_ANONYMIZED', actorId: actor.id }))) {
             throw new PublicError('Révocation des sessions du compte anonymisé impossible.');
         }
+
+        // Lot « Avis », phase 2 (D8, décision du 27/11 ; correctif T4) : SMS et email juste avant l'effacement du profil, après
+        // la dernière étape qui peut échouer (journal pseudonymisé, compte de connexion, sessions) : jamais « votre compte est
+        // supprimé » pour un compte qui ne l'est pas. Un échec de l'avis est journalisé et n'empêche pas l'anonymisation.
+        if (targetUser) await AdminService.noticeBeforeAnonymization(targetUserId, targetUser.phone);
 
         // 4. DB PUBLIQUE users (Anonymisation RGPD)
         let finalStatus = 'SUPPRIME';
@@ -515,8 +531,9 @@ export class AdminService {
                     .delete()
                     .in('phone', [originalPhone, originalPhone.replace('+', ''), anonymizedPhone]) // lot 1C.1 : plus de filtre texte
                 : Promise.resolve({ error: null }),
+            AdminService.scrubAnonymizedOutbox(targetUserId),
         ]);
-        const cleanupLabels = ['admin_permissions', 'user_roles ADMIN et SUPERADMIN', 'event_controllers', 'user_roles CONTROLEUR', 'otp_codes'];
+        const cleanupLabels = ['admin_permissions', 'user_roles ADMIN et SUPERADMIN', 'event_controllers', 'user_roles CONTROLEUR', 'otp_codes', 'notification_outbox'];
         const failedCleanups: string[] = [];
         cleanups.forEach((res: { error: { message: string } | null }, i: number) => {
             if (res.error) {

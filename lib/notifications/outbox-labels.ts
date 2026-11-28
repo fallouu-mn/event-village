@@ -69,6 +69,7 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     // Lot « Avis », phase 2 : plafond de 2 SMS d'avis par heure (libellé qui manquait) ; SMS fondu dans un SMS regroupé (2d)
     LAST_HOUR_CAP: 'Déjà 2 SMS sur cet événement dans l’heure',
     GROUPED_ADMIN_SMS: 'Compté dans le SMS regroupé « argent à vérifier »',
+    ACCOUNT_ANONYMIZED: 'Compte supprimé : plus aucun envoi',
     COVERED_BY_INVITATION: "Déjà prévenu par l'invitation",
     SETTING_MISSING: 'Réglage des notifications manquant',
     MIGRATED_NO_PHONE: 'Reprise sans numéro de téléphone',

@@ -444,24 +444,19 @@ export function personShortName(full: string): string {
     return `${words[0]} ${last.charAt(0).toUpperCase()}.`;
 }
 /** Avis phase 2 (D1) : où réessayer un paiement non abouti (événement, commande, réservation, abonnement). */
+/**
+ * Lien du paiement non abouti, le même pour la cloche, la notification et le SMS (contre-vérification du lot « Avis »,
+ * phase 2, observation 4) : la page de l'événement pour des billets (le SMS ne nomme alors pas l'événement, pour que le lien
+ * tienne dans un segment) ; sinon la liste où se trouve l'achat (un identifiant de commande ne tiendrait pas dans le SMS).
+ */
 function paymentRetryPath(d: object): string {
     switch (optText(d, 'target')) {
         case 'TICKET': return optText(d, 'event_id') ? `/events/${ident(d, 'event_id')}` : '/explore';
-        case 'ORDER': return optText(d, 'order_id') ? `/orders/${ident(d, 'order_id')}` : '/orders';
-        case 'HALL_RESERVATION': return optText(d, 'reservation_id') ? `/halls/reservations/${ident(d, 'reservation_id')}` : '/halls/reservations';
-        case 'TABLE_RESERVATION': return optText(d, 'reservation_id') ? `/tables/reservations/${ident(d, 'reservation_id')}` : '/tables/reservations';
-        case 'SUBSCRIPTION': return '/partner/subscription';
-        default: return '/';
-    }
-}
-/** Lien court du SMS (l'identifiant ne tient pas dans un segment). */
-function paymentRetrySmsPath(d: object): string {
-    switch (optText(d, 'target')) {
         case 'ORDER': return '/orders';
         case 'HALL_RESERVATION': return '/halls/reservations';
         case 'TABLE_RESERVATION': return '/tables/reservations';
         case 'SUBSCRIPTION': return '/partner/subscription';
-        default: return '/tickets';
+        default: return '/';
     }
 }
 function paymentNotCompletedText(d: object): string {
@@ -479,7 +474,6 @@ function paymentNotCompletedText(d: object): string {
 }
 function paymentNotCompletedSms(d: object): string {
     switch (optText(d, 'target')) {
-        case 'TICKET': return `pour ${smsVar(text(d, 'title'), 30)}`;
         case 'ORDER': return optText(d, 'order_number') ? `pour la commande ${smsVar(text(d, 'order_number'), 20)}` : 'pour votre commande';
         case 'HALL_RESERVATION': return 'pour votre réservation de salle';
         case 'TABLE_RESERVATION': return 'pour votre réservation de table';
@@ -2390,7 +2384,7 @@ const CATALOG = {
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_WITHDRAWAL_REJECTED: define('ADMIN_WITHDRAWAL_REJECTED', {
-        label: 'Retrait refusé par l’opérateur', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
+        label: 'Retrait refusé par l’opérateur', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification, reportée la nuit (contre-vérification, observation 5) */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT', night: 'DEFER',
         link: () => '/admin/finance#du-aux-partenaires',
         // Finition 4 (point 5, E-33) : variante « constaté non versé » (not_paid), jamais « refusé par l'opérateur »
         inApp: (d) => (field(d, 'not_paid') === true
@@ -2399,7 +2393,7 @@ const CATALOG = {
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_FINANCE_DEBT: define('ADMIN_FINANCE_DEBT', {
-        label: 'Créance sur un compte', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'payments.read', inAppType: 'FINANCE_ALERT',
+        label: 'Créance sur un compte', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification, reportée la nuit (contre-vérification, observation 5) */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'payments.read', inAppType: 'FINANCE_ALERT', night: 'DEFER',
         link: () => '/admin/finance#creances',
         inApp: (d) => {
             const kind = optText(d, 'account_kind');
@@ -2438,7 +2432,7 @@ const CATALOG = {
         sample: { day: '2026-11-02', count: 2_150, threshold: 2_000 },
     }),
     ADMIN_SMS_CAP_GLOBAL: define('ADMIN_SMS_CAP_GLOBAL', {
-        label: 'Plafond de SMS atteint', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
+        label: 'Plafond de SMS atteint', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification, reportée la nuit (contre-vérification, observation 5) */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED', night: 'DEFER',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Plafond de SMS atteint : codes bloqués',
@@ -2448,7 +2442,7 @@ const CATALOG = {
         sample: { day: '2026-11-02', cap: 1_000 },
     }),
     ADMIN_SMS_CAP_NON_OTP: define('ADMIN_SMS_CAP_NON_OTP', {
-        label: 'Quota de SMS hors codes atteint', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_NON_OTP_SHARE_REACHED',
+        label: 'Quota de SMS hors codes atteint', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification, reportée la nuit (contre-vérification, observation 5) */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_NON_OTP_SHARE_REACHED', night: 'DEFER',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Quota de SMS hors codes atteint',
@@ -2458,7 +2452,7 @@ const CATALOG = {
     }),
     // Lot 9 quater (A8 : AUD-05) : part quotidienne des codes vers un numéro sans compte (inscriptions) atteinte.
     ADMIN_SMS_CAP_NEW_NUMBERS: define('ADMIN_SMS_CAP_NEW_NUMBERS', {
-        label: 'Codes d’inscription : part du jour atteinte', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
+        label: 'Codes d’inscription : part du jour atteinte', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification, reportée la nuit (contre-vérification, observation 5) */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED', night: 'DEFER',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Codes d’inscription : part du jour atteinte',
@@ -3255,7 +3249,9 @@ const CATALOG = {
         link: paymentRetryPath,
         inApp: (d) => ({ title: 'Paiement non abouti', content: paymentNotCompletedText(d) }),
         // Lot 9 bis (R74) : une valeur tronquée finit par « ... », jamais « .... »
-        sms: (d, ctx) => `${SMS_PREFIX}${endWithPeriod(`paiement non abouti ${paymentNotCompletedSms(d)}`)} Rien n'a été débité. Réessayez : ${appLink(ctx, paymentRetrySmsPath(d))}`,
+        sms: (d, ctx) => (optText(d, 'target') === 'TICKET'
+            ? `${SMS_PREFIX}paiement non abouti, rien n'a été débité. Réessayez : ${appLink(ctx, paymentRetryPath(d))}`
+            : `${SMS_PREFIX}${endWithPeriod(`paiement non abouti ${paymentNotCompletedSms(d)}`)} Rien n'a été débité. Réessayez : ${appLink(ctx, paymentRetryPath(d))}`),
         sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, target: 'TICKET', amount: 15_000 },
     }),
     // D8 : juste avant l'anonymisation d'un compte par l'équipe (SMS et email, envoyés tout de suite ; aucune cloche : le compte
@@ -3317,7 +3313,9 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     if (parts.length === 0 && changed > 0) return `${SMS_PREFIX}${changed} salle(s) validée(s) modifiée(s) à vérifier : ${link}`;
     if (changed > 0) parts.push(`${changed} salle(s) modifiée(s)`);
     if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count, hall_count, hall_changed_count et product_count à zéro : rien à valider');
-    const detailed = `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+    // Contre-vérification du lot « Avis », phase 2 (observation 3) : « A, B et C », jamais deux « et »
+    const listed = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} et ${parts[parts.length - 1]}` : parts[0];
+    const detailed = `${SMS_PREFIX}${listed} attendent votre validation : ${link}`;
     // Lot 10b : quatre rubriques peuvent dépasser un segment ; alors le total seul
     if (smsSegments(detailed).segments <= 1) return detailed;
     return `${SMS_PREFIX}${partners + events + venues + halls + changed + products} demandes attendent votre validation : ${link}`;

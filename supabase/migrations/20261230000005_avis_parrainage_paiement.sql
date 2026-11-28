@@ -17,11 +17,17 @@
 --  3. notification_daily_checks (recopie de 20261125000003_f4_ventes.sql:382-564) : entre 9 h et 12 h (heure de Dakar), une
 --     fois par jour et par parrain : commissions gagnées la veille (nombre, montant, délai avant disponibilité) et commissions
 --     devenues disponibles depuis la veille à 9 h ; commissions annulées jamais annoncées ; au plus 200 parrains par passage ;
+--     correctif T3 de la contre-vérification : le montant annoncé disponible est borné par le montant réellement retirable
+--     au moment du contrôle (finance_account_balance du compte PARRAINAGE : gel et retraits compris), rien s'il est nul ;
 --  4. paiement non abouti : private.payment_cart_key (panier : billets = compte, événement, catégories et quantités, comme
 --     payment_duplicate_of ; commande, réservation : l'objet payé ; abonnement : compte, pack et jour) ;
 --     private.notif_payment_not_completed, à l'échec ou à l'expiration d'un paiement de la plateforme : un avis par panier
---     (clé du panier), dû 10 minutes plus tard, jamais si un autre paiement du panier a réussi depuis ;
---     private.notif_payment_cart_paid : un paiement du panier réussit → l'avis encore en attente est annulé (SUPERSEDED).
+--     (clé du panier), jamais si un autre paiement du panier a réussi depuis ; correctif T2 de la contre-vérification : dû
+--     seulement quand l'échec est définitif, à la fin du délai de grâce de SamirPay (2 h après la création du paiement,
+--     PROVIDER_FAILED_GRACE_MS de lib/payments/confirmation.service.ts ; au moins 10 minutes après l'échec) ;
+--     private.notif_payment_cart_paid : un paiement du panier réussit, ou le paiement lui-même est débité tard (succès
+--     tardif, à rembourser compris) → l'avis encore en attente est annulé (SUPERSEDED) : « Rien n'a été débité » n'est
+--     jamais envoyé avant que ce soit sûr.
 -- Aucune fonction de paiement ni de commission recopiée (déclencheurs nouveaux). Droits : fonctions private fermées à tous
 -- les rôles de l'API ; notification_daily_checks inchangée (CREATE OR REPLACE). Sans BEGIN ni COMMIT, rejouable.
 -- ============================================================================
@@ -248,7 +254,7 @@ BEGIN
         FOR f IN
             SELECT c.sponsor_id, count(*)::integer AS n, sum(c.amount) AS amount, to_char(v_day - 1, 'YYYY-MM-DD') AS day_txt
               FROM public.referral_commissions c
-             WHERE c.kind = 'COMMISSION' AND c.status::text <> 'CANCELLED' AND c.amount > 0
+             WHERE c.kind = 'COMMISSION' AND c.status::text <> 'CANCELLED' AND c.cancelled_at IS NULL AND c.amount > 0
                AND c.created_at >= v_start - interval '1 day' AND c.created_at < v_start
                AND NOT EXISTS (SELECT 1 FROM public.notification_outbox o
                                 WHERE o.group_key = 'REFERRAL_EARNED:' || c.sponsor_id::text || ':' || to_char(v_day - 1, 'YYYY-MM-DD'))
@@ -262,15 +268,19 @@ BEGIN
                 'data', jsonb_build_object('day', f.day_txt, 'count', f.n, 'amount', f.amount,
                                            'days', public.fin_setting_num('finance.referral_availability_days')::integer)));
         END LOOP;
-        -- Commissions devenues disponibles depuis la veille à 9 h : quatre canaux, montant total
+        -- Commissions devenues disponibles depuis la veille à 9 h : quatre canaux ; montant = le plus petit du total devenu
+        -- disponible et du montant retirable du compte de parrainage à ce moment (correctif T3 : une commission déjà retirée,
+        -- gelée par la suspension de son événement ou réduite n'est jamais annoncée « à retirer »), rien s'il est nul
         FOR f IN
-            SELECT c.sponsor_id, sum(c.amount) AS amount
+            SELECT c.sponsor_id,
+                   LEAST(sum(c.amount), COALESCE((public.finance_account_balance(c.sponsor_id, 'PARRAINAGE')->>'withdrawable')::numeric, 0)) AS amount
               FROM public.referral_commissions c
-             WHERE c.kind = 'COMMISSION' AND c.status::text <> 'CANCELLED' AND c.amount > 0 AND c.available_at IS NOT NULL
+             WHERE c.kind = 'COMMISSION' AND c.status::text <> 'CANCELLED' AND c.cancelled_at IS NULL AND c.amount > 0 AND c.available_at IS NOT NULL
                AND c.available_at >= v_start + interval '9 hours' - interval '1 day' AND c.available_at < v_start + interval '9 hours'
                AND NOT EXISTS (SELECT 1 FROM public.notification_outbox o
                                 WHERE o.group_key = 'REFERRAL_AVAILABLE:' || c.sponsor_id::text || ':' || v_day_txt)
              GROUP BY c.sponsor_id
+            HAVING LEAST(sum(c.amount), COALESCE((public.finance_account_balance(c.sponsor_id, 'PARRAINAGE')->>'withdrawable')::numeric, 0)) > 0
              ORDER BY c.sponsor_id
              LIMIT 200
         LOOP
@@ -313,7 +323,9 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION private.payment_cart_key(uuid) FROM PUBLIC, anon, authenticated, service_role;
 
--- Échec ou expiration d'un paiement de la plateforme : un avis par panier, jamais si un autre paiement du panier a réussi
+-- Échec ou expiration d'un paiement de la plateforme : un avis par panier, jamais si un autre paiement du panier a réussi ;
+-- dû à la fin du délai de grâce de SamirPay (un FAILED n'est définitif que 2 h après la création, un EXPIRED reste surveillé
+-- par le cron des succès tardifs), au moins 10 minutes après l'échec
 CREATE OR REPLACE FUNCTION private.notif_payment_not_completed()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -350,7 +362,7 @@ BEGIN
     PERFORM public.notif_enqueue(jsonb_build_object(
         'type', 'PAYMENT_NOT_COMPLETED', 'key', 'PAYMENT_NOT_COMPLETED:' || v_cart,
         'user_id', NEW.client_id, 'event_id', CASE WHEN v_target = 'TICKET' THEN NEW.event_id END,
-        'data', v_data, 'due_at', now() + interval '10 minutes'));
+        'data', v_data, 'due_at', GREATEST(now() + interval '10 minutes', NEW.created_at + interval '2 hours')));
     RETURN NULL;
 END;
 $$;
@@ -364,7 +376,8 @@ CREATE TRIGGER trg_payments_not_completed_notify
           AND NEW.is_platform_payment AND NEW.client_id IS NOT NULL AND NEW.amount > 0)
     EXECUTE FUNCTION private.notif_payment_not_completed();
 
--- Un paiement du panier réussit : l'avis « non abouti » encore en attente n'a plus lieu d'être
+-- Un paiement du panier réussit, ou le paiement en échec est finalement débité (succès tardif, à rembourser compris) :
+-- l'avis « non abouti » encore en attente n'a plus lieu d'être
 CREATE OR REPLACE FUNCTION private.notif_payment_cart_paid()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -389,6 +402,7 @@ DROP TRIGGER IF EXISTS trg_payments_cart_paid_notify ON public.payments;
 CREATE TRIGGER trg_payments_cart_paid_notify
     AFTER UPDATE OF status ON public.payments
     FOR EACH ROW
-    WHEN (NEW.status::text IN ('SUCCESS', 'PARTIAL') AND OLD.status::text NOT IN ('SUCCESS', 'PARTIAL')
+    WHEN (NEW.status::text IN ('SUCCESS', 'PARTIAL', 'REFUND_PENDING', 'REFUNDED')
+          AND OLD.status::text NOT IN ('SUCCESS', 'PARTIAL', 'REFUND_PENDING', 'REFUNDED')
           AND NEW.is_platform_payment AND NEW.client_id IS NOT NULL)
     EXECUTE FUNCTION private.notif_payment_cart_paid();

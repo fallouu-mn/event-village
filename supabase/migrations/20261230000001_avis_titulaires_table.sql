@@ -10,17 +10,19 @@
 -- Correctif :
 --  1. private.event_table_holders(événement) — nouvelle : titulaires des tables ACTIVES de l'événement (comptes non
 --     supprimés), une ligne par compte (sa première table active), avec l'ouverture du remboursement de la table ;
---  2. private.notif_holder_sms_count(événement, compte, depuis) — nouvelle : SMS d'avis au détenteur (changement,
---     suspension, réactivation, clôture) en attente ou en cours d'envoi, ou partis depuis l'instant donné ;
+--  2. private.notif_holder_sms_count(événement, compte, depuis) — nouvelle : SMS de suspension et de reprise au
+--     détenteur en attente ou en cours d'envoi, ou partis depuis l'instant donné (correctif T1 de la contre-vérification :
+--     ni le report ni la clôture n'y sont comptés) ;
 --  3. event_notice_recipient_count — recopie de 20261119000006_f2b_cadence_avis.sql:30-61 : les titulaires sans billet
 --     sont comptés (aperçu « Prévenir ») ;
 --  4. event_change_notify — recopie de 20261121000006_cvf2b_plafond_heure_glissante.sql:17-325 : les titulaires sans
 --     billet rejoignent les détenteurs (même clé par compte : jamais deux avis s'il garde aussi un billet), avec
 --     booking_id dans les données (lien « Ma table ») et refund_open si le remboursement de la table est ouvert ; le
---     plafond de 2 SMS par heure glissante compte aussi les SMS de suspension, réactivation et clôture ;
+--     plafond de 2 SMS par heure glissante reste celui d'avant le lot (seuls les EVENT_CHANGED, correctif T1) ;
 --  5. notif_event_status_changed — recopie de 20261109000009_lot9bis_messages.sql:106-374 : suspension, réactivation et
---     clôture parviennent aux titulaires sans billet (booking_id) ; le SMS de ces trois avis suit le même plafond de
---     2 SMS d'avis par détenteur et par événement dans l'heure (trace SKIPPED LAST_HOUR_CAP) ;
+--     clôture parviennent aux titulaires sans billet (booking_id) ; seules les bascules répétées entre suspension et
+--     reprise sont bornées entre elles (2 SMS par détenteur et par événement dans l'heure, trace SKIPPED LAST_HOUR_CAP) ;
+--     le SMS de la clôture et celui de la première suspension ne sont jamais plafonnés (correctif T1) ;
 --  6. notification_outbox_claim — recopie de 20261125000006_f4_evenement_proche.sql:46-457 : un EVENT_CHANGED adressé au
 --     titulaire d'une table encore active n'est plus sauté faute de billet.
 -- Chaque recopie : ajouts seuls, aucune ligne de la dernière définition retirée (test
@@ -46,7 +48,7 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION private.event_table_holders(uuid) FROM PUBLIC, anon, authenticated, service_role;
 
--- 2. SMS d'avis récents d'un détenteur pour un événement (plafond de 2 SMS par heure glissante)
+-- 2. SMS de suspension et de reprise récents d'un détenteur pour un événement (bascules répétées, 2 SMS par heure glissante)
 CREATE OR REPLACE FUNCTION private.notif_holder_sms_count(p_event uuid, p_user uuid, p_from timestamptz)
 RETURNS integer
 LANGUAGE sql
@@ -57,15 +59,16 @@ AS $$
     SELECT count(*)::integer
       FROM public.notification_outbox o
      WHERE o.event_id = p_event AND o.recipient_user_id = p_user AND o.channel = 'SMS'
-       AND o.type IN ('EVENT_CHANGED', 'EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER', 'EVENT_CLOSED_HOLDER')
+       AND o.type IN ('EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER')
        AND (o.status IN ('PENDING', 'SENDING')
             OR (o.status IN ('SENT', 'UNCERTAIN') AND COALESCE(o.sent_at, o.claimed_at, o.created_at) > p_from))
 $$;
 REVOKE ALL ON FUNCTION private.notif_holder_sms_count(uuid, uuid, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 
--- 2 bis. Avis d'état au détenteur (suspension, réactivation, clôture) : SMS sauté (LAST_HOUR_CAP) s'il a déjà 2 SMS d'avis
--- pour cet événement dans l'heure ; la ligne SMS sautée prend la clé de l'avis, l'émetteur crée ensuite les autres canaux
--- (même clé : ON CONFLICT DO NOTHING de notif_enqueue, aucun SMS en double).
+-- 2 bis. Bascules répétées (nouvelle suspension, reprise) : SMS sauté (LAST_HOUR_CAP) si le détenteur a déjà 2 SMS de
+-- suspension ou de reprise pour cet événement dans l'heure ; la ligne SMS sautée prend la clé de l'avis, l'émetteur crée
+-- ensuite les autres canaux (même clé : ON CONFLICT DO NOTHING de notif_enqueue, aucun SMS en double). Jamais pour la
+-- clôture, ni pour la première suspension de l'événement adressée à ce détenteur (correctif T1).
 CREATE OR REPLACE FUNCTION private.notif_holder_status_sms_cap(p_type text, p_key text, p_user uuid, p_event uuid, p_data jsonb)
 RETURNS void
 LANGUAGE plpgsql
@@ -74,6 +77,14 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+    IF p_type NOT IN ('EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER') THEN
+        RETURN;
+    END IF;
+    IF p_type = 'EVENT_SUSPENDED_HOLDER' AND NOT EXISTS (
+        SELECT 1 FROM public.notification_outbox o
+         WHERE o.event_id = p_event AND o.recipient_user_id = p_user AND o.type = 'EVENT_SUSPENDED_HOLDER' AND o.channel = 'SMS') THEN
+        RETURN;
+    END IF;
     IF private.notif_holder_sms_count(p_event, p_user, now() - interval '1 hour') >= 2 THEN
         PERFORM public.notif_enqueue(jsonb_build_object(
             'type', p_type, 'key', p_key, 'user_id', p_user, 'event_id', p_event, 'data', p_data,
@@ -84,7 +95,7 @@ $$;
 REVOKE ALL ON FUNCTION private.notif_holder_status_sms_cap(text, text, uuid, uuid, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 
 -- 2 ter. Avis d'état aux titulaires des tables actives qui n'ont plus de billet VALIDE ou UTILISE (les autres l'ont déjà
--- reçu comme détenteurs, même clé) : lien « Ma table » (booking_id), même plafond.
+-- reçu comme détenteurs, même clé) : lien « Ma table » (booking_id), mêmes bascules bornées (jamais la clôture).
 CREATE OR REPLACE FUNCTION private.notif_table_holders_status(p_type text, p_ref text, p_event uuid, p_data jsonb)
 RETURNS integer
 LANGUAGE plpgsql
@@ -306,14 +317,6 @@ BEGIN
                 -- Contre-vérification 2b (4f) : deux SMS d'avis en attente, en cours d'envoi ou partis dans l'heure qui
                 -- précède cette échéance : aucun troisième, trace SKIPPED (quel que soit le début de l'événement)
                 v_cap_from := v_hdue - interval '1 hour';
-                -- Avis phase 2 (2b) : les SMS de suspension, de réactivation et de clôture au détenteur comptent aussi dans
-                -- ce plafond de 2 SMS d'avis par heure glissante (trace SKIPPED LAST_HOUR_CAP)
-                IF private.notif_holder_sms_count(v_event, v_holder, v_cap_from) >= 2 THEN
-                    PERFORM public.notif_enqueue(jsonb_build_object(
-                        'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
-                        'data', v_hdata, 'channels', jsonb_build_array('SMS'),
-                        'skip', jsonb_build_object('SMS', 'LAST_HOUR_CAP')));
-                ELSE
                 IF (SELECT count(*) FROM public.notification_outbox o
                      WHERE o.event_id = v_event AND o.recipient_user_id = v_holder AND o.type = 'EVENT_CHANGED'
                        AND o.channel = 'SMS'
@@ -331,7 +334,6 @@ BEGIN
                                 WHERE o.idempotency_key = v_nkey || ':SMS' AND o.status = 'PENDING') THEN
                         v_sms_queued := v_sms_queued + 1;
                     END IF;
-                END IF;
                 END IF;
             ELSIF NOT v_sms THEN
                 -- Titre seul : aucun SMS, trace SKIPPED (le SMS déjà en attente porte le nouveau titre)
@@ -575,7 +577,7 @@ BEGIN
              WHERE t.event_id = NEW.event_id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE')
              ORDER BY t.user_id
         LOOP
-            -- Avis phase 2 (2b) : plafond de 2 SMS d'avis par détenteur et par événement dans l'heure
+            -- Avis phase 2 (2b, correctif T1) : bascules répétées bornées (jamais la première suspension)
             PERFORM private.notif_holder_status_sms_cap('EVENT_SUSPENDED_HOLDER', 'EVENT_SUSPENDED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
                                                          h.user_id, NEW.event_id, v_data);
             PERFORM public.notif_enqueue(jsonb_build_object(
@@ -605,7 +607,7 @@ BEGIN
              WHERE t.event_id = NEW.event_id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE')
              ORDER BY t.user_id
         LOOP
-            -- Avis phase 2 (2b) : plafond de 2 SMS d'avis par détenteur et par événement dans l'heure
+            -- Avis phase 2 (2b, correctif T1) : bascules répétées bornées entre suspension et reprise
             PERFORM private.notif_holder_status_sms_cap('EVENT_REACTIVATED_HOLDER', 'EVENT_REACTIVATED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
                                                          h.user_id, NEW.event_id, v_data);
             PERFORM public.notif_enqueue(jsonb_build_object(
@@ -752,9 +754,6 @@ BEGIN
                  WHERE t.event_id = NEW.event_id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE')
                  ORDER BY t.user_id
             LOOP
-                -- Avis phase 2 (2b) : plafond de 2 SMS d'avis par détenteur et par événement dans l'heure
-                PERFORM private.notif_holder_status_sms_cap('EVENT_CLOSED_HOLDER', 'EVENT_CLOSED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
-                                                             h.user_id, NEW.event_id, v_data);
                 PERFORM public.notif_enqueue(jsonb_build_object(
                     'type', 'EVENT_CLOSED_HOLDER', 'key', 'EVENT_CLOSED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
                     'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data));

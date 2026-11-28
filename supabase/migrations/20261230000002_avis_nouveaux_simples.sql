@@ -178,7 +178,9 @@ CREATE TRIGGER trg_shift_validated_notify
     WHEN (OLD.discrepancy_validated_at IS NULL AND NEW.discrepancy_validated_at IS NOT NULL)
     EXECUTE FUNCTION private.notif_shift_validated();
 
--- 5. A9 : porte ou droit d'encaisser changé après l'affectation (fin de transaction, état final relu)
+-- 5. A9 : porte ou droit d'encaisser changé après l'affectation (fin de transaction, état final relu). Contre-vérification
+-- (observation 2) : chaque mise à jour différée garde son propre OLD ; seule la PREMIÈRE de la transaction pour une
+-- affectation (dont l'OLD est l'état de départ) décide, les suivantes ne font rien : porte A → B → A, aucun avis.
 CREATE OR REPLACE FUNCTION private.notif_controller_post_changed()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -199,6 +201,12 @@ BEGIN
     IF OLD.created_at >= now() THEN
         RETURN NULL;
     END IF;
+    -- Une seule décision par affectation et par transaction, prise sur l'état de départ (OLD de la première mise à jour)
+    IF position(',' || NEW.id::text || ',' IN COALESCE(current_setting('event_village.post_changed', true), '')) > 0 THEN
+        RETURN NULL;
+    END IF;
+    PERFORM set_config('event_village.post_changed',
+                       COALESCE(NULLIF(current_setting('event_village.post_changed', true), ''), ',') || NEW.id::text || ',', true);
     SELECT ec.id, ec.event_id, ec.user_id, ec.gate_id, ec.can_accept_cash INTO cur
       FROM public.event_controllers ec WHERE ec.id = NEW.id;
     IF NOT FOUND THEN
