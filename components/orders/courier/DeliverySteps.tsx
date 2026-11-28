@@ -65,7 +65,7 @@ export function DeliverySteps({ steps }: { steps: Record<string, unknown> }) {
                                 >
                                     {done && i < last ? <Check size={18} strokeWidth={3} /> : <Icon size={18} />}
                                 </span>
-                                <span className={cn('text-center text-xs font-semibold leading-tight', done ? 'text-foreground-strong' : 'text-muted-foreground')}>
+                                <span className={cn('text-center text-sm font-semibold leading-tight', done ? 'text-foreground-strong' : 'text-muted-foreground')}>
                                     {s.label}
                                     <span className="sr-only">{done ? ' : franchie' : ' : à venir'}</span>
                                 </span>

@@ -16,7 +16,7 @@ import { HandoverCodeInput } from '@/components/orders/partner/orders/HandoverCo
 import { usePolledJson, useServerClock } from '@/components/orders/partner/orders/usePolledJson';
 import { formatFcfa } from '@/lib/format';
 import { DeliverySteps } from './DeliverySteps';
-import { countdownText, courierStateLabel, directionsUrl, hourText, phoneText, readDelivery } from './courier-view';
+import { COURIER_PATHS, countdownText, courierStateLabel, directionsUrl, hourText, phoneText, readDelivery } from './courier-view';
 
 /**
  * Lot 12d — une livraison vue par son livreur (/courier/orders/<id>), pensée pour la rue : très grands boutons, contraste
@@ -38,7 +38,7 @@ const BIG = 'min-h-14 w-full rounded-2xl text-lg';
 export function CourierDelivery({ orderId }: { orderId: string }) {
     const { isAuthenticated, isLoading: authLoading } = useAuth();
     const [handedOver, setHandedOver] = useState(false);
-    const url = authLoading || !isAuthenticated || handedOver ? null : `/api/courier/orders/${encodeURIComponent(orderId)}`;
+    const url = authLoading || !isAuthenticated || handedOver ? null : COURIER_PATHS.apiOrder(orderId);
     const polled = usePolledJson<{ order?: unknown }>(url, POLL_MS);
     const now = useServerClock(polled.skewMs);
     const d = polled.data ? readDelivery(polled.data.order) : null;
@@ -55,7 +55,7 @@ export function CourierDelivery({ orderId }: { orderId: string }) {
         setBusy(name);
         setActionError(null);
         try {
-            const r = await sendJson<Record<string, unknown>>(`/api/courier/orders/${encodeURIComponent(orderId)}`, 'PATCH', payload);
+            const r = await sendJson<Record<string, unknown>>(COURIER_PATHS.apiOrder(orderId), 'PATCH', payload);
             return r;
         } catch (err) {
             setActionError(errorMessage(err, 'Action impossible pour le moment. Réessayez.'));
@@ -73,7 +73,7 @@ export function CourierDelivery({ orderId }: { orderId: string }) {
                     title="Connectez-vous"
                     description="Cette livraison s’affiche une fois connecté avec votre compte de livreur."
                     actionLabel="Se connecter"
-                    actionHref={`/login?redirect=${encodeURIComponent(`/courier/orders/${orderId}`)}`}
+                    actionHref={`/login?redirect=${encodeURIComponent(COURIER_PATHS.order(orderId))}`}
                 />
             </div>
         );
@@ -86,21 +86,21 @@ export function CourierDelivery({ orderId }: { orderId: string }) {
                     <CheckCircle2 size={56} aria-hidden="true" className="ev-count-pop mb-3 text-success-text" />
                     <h1 className="text-2xl font-extrabold text-foreground-strong">Commande remise</h1>
                     <p className="mt-2 max-w-sm text-base text-foreground-strong">Merci ! Le client et l’établissement sont prévenus.</p>
-                    <LinkButton href="/courier/orders" variant="gradient" className="mt-6">Mes livraisons</LinkButton>
+                    <LinkButton href={COURIER_PATHS.home} variant="gradient" className="mt-6">Mes livraisons</LinkButton>
                 </div>
             </div>
         );
     }
 
     if (polled.error?.status === 404) {
-        return <UnavailableItem actionLabel="Mes livraisons" actionHref="/courier/orders" />;
+        return <UnavailableItem actionLabel="Mes livraisons" actionHref={COURIER_PATHS.home} />;
     }
 
     if (!d) {
         if (polled.error) {
             return (
                 <div className="mx-auto max-w-2xl pb-24 pt-6 lg:pb-12">
-                    <ErrorState title="Livraison indisponible" description={polled.error.message} onRetry={() => void polled.reload()} />
+                    <ErrorState title="Livraison indisponible" description={errorMessage(polled.error, 'La livraison ne se charge pas. Réessayez.')} onRetry={() => void polled.reload()} />
                 </div>
             );
         }
@@ -152,7 +152,7 @@ export function CourierDelivery({ orderId }: { orderId: string }) {
 
     return (
         <div className="mx-auto max-w-2xl space-y-4 pb-28 pt-2 lg:pb-12">
-            <LinkButton href="/courier/orders" variant="ghost" size="sm" leftIcon={<ArrowLeft size={18} />} className="-ml-3">Mes livraisons</LinkButton>
+            <LinkButton href={COURIER_PATHS.home} variant="ghost" size="sm" leftIcon={<ArrowLeft size={18} />} className="-ml-3">Mes livraisons</LinkButton>
 
             <header className="space-y-1">
                 <p className="text-sm font-semibold text-muted-foreground">{courierStateLabel(d)}</p>
@@ -276,7 +276,7 @@ export function CourierDelivery({ orderId }: { orderId: string }) {
                 <section aria-labelledby="remise-titre" className="space-y-4 rounded-3xl border-2 border-primary bg-card p-4 sm:p-5">
                     <h2 id="remise-titre" className="text-lg font-bold text-foreground-strong">Remise au client</h2>
                     {needCash && (
-                        <div className="space-y-3 rounded-2xl border-2 border-warning-border bg-warning-soft p-4">
+                        <div className="space-y-3 rounded-2xl border-2 border-warning-border bg-warning-soft p-4 tabular-nums">
                             <p className="flex items-center gap-2 text-xl font-extrabold text-warning-text">
                                 <Wallet size={22} aria-hidden="true" />À encaisser : {formatFcfa(d.balanceDue)}
                             </p>

@@ -330,6 +330,20 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('PRODUCT_DECISION_SMS', [S], 'PARTNER', 'A', null, ['/partner/products/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], null),
     ess('ADMIN_ORDER_REFUND_BLOCKED', [S], 'ADMIN', 'B', null, ['/admin/finance#versements-a-reprendre'], null, 'refunds.manage'),
     ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products'], 'Produits à vérifier', 'partners.validate'),
+    // Lot 12d (ajouts signalés au rapport) : livreur (A6, A7), client absent, signalements, fermetures, pause
+    ess('ORDER_COURIER_ANSWERED', [I, P], 'PARTNER', 'B', 'ORDER', ['/partner/orders/livreurs?invitation=b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04'], 'Livreur ajouté'),
+    ess('ORDER_COURIER_REMOVED', [I, P], 'CLIENT', 'A', 'ORDER', ['/courier/orders?equipe=b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04'], 'Vous ne livrez plus'),
+    ess('ORDER_COURIER_RETURN', [I, P], 'CLIENT', 'A', 'ORDER', ['/courier/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Rapportez la commande'),
+    ess('ORDER_CLIENT_ABSENT', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Le livreur n’arrive pas à vous joindre'),
+    ess('ORDER_CLIENT_ABSENT_PRO', [I, P], 'PARTNER', 'A', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Client absent'),
+    ess('ORDER_ABSENCE_DECIDED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande non livrée'),
+    ess('ORDER_ABSENCE_DECIDED_PRO', [I, P], 'PARTNER', 'A', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Absence du client : décision'),
+    ess('ORDER_ISSUE_PRO', [I, P], 'PARTNER', 'A', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Problème signalé'),
+    ess('ORDER_ISSUE_CLOSED', [I, P], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Signalement traité'),
+    ess('ORDER_CLOSURE_ORDERS', [I, P], 'PARTNER', 'B', 'ORDER', ['/partner/tables/edition/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59/fermetures?fermeture=a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commandes pendant la fermeture'),
+    ess('ORDER_PAUSE_ENDED', [I, P], 'PARTNER', 'B', 'ORDER', ['/partner/orders?etablissement=a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commandes reprises'),
+    ess('ADMIN_ORDER_ABSENT', [I, M], 'ADMIN', 'B', 'ORDER', ['/admin/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Absence à décider', 'refunds.manage'),
+    ess('ADMIN_ORDER_ISSUE', [I, M], 'ADMIN', 'B', 'ORDER', ['/admin/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Signalements à traiter', 'refunds.manage'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)

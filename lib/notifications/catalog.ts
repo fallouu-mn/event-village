@@ -2140,7 +2140,7 @@ const CATALOG = {
     // seulement pour nommer une personne ; chaque avis mène à l'objet exact et dit quoi faire.
     ORDER_COURIER_ANSWERED: define('ORDER_COURIER_ANSWERED', {
         label: 'Réponse d’un livreur', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'ORDER',
-        link: () => '/partner/orders/livreurs',
+        link: (d) => `/partner/orders/livreurs?invitation=${ident(d, 'invitation_id')}`,
         inApp: (d) => {
             const who = optText(d, 'courier_name') ?? 'La personne invitée';
             return field(d, 'accepted') === true
@@ -2151,7 +2151,7 @@ const CATALOG = {
     }),
     ORDER_COURIER_REMOVED: define('ORDER_COURIER_REMOVED', {
         label: 'Retiré d’une équipe de livraison', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'ORDER',
-        link: () => '/courier/orders',
+        link: (d) => `/courier/orders?equipe=${ident(d, 'invitation_id')}`,
         inApp: (d) => {
             const name = optText(d, 'partner_name');
             return { title: 'Vous ne livrez plus', content: `${name ? q(name) : 'Un établissement'} vous a retiré de ses livreurs : ses commandes ne vous sont plus confiées. Une livraison déjà partie reste à terminer avec l’établissement.` };
@@ -2248,7 +2248,7 @@ const CATALOG = {
     }),
     ORDER_PAUSE_ENDED: define('ORDER_PAUSE_ENDED', {
         label: 'Fin de la pause des commandes', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
-        link: () => '/partner/orders',
+        link: (d) => `/partner/orders?etablissement=${ident(d, 'venue_id')}`,
         inApp: (d) => ({ title: 'Commandes reprises', content: `La pause est finie : ${venueName(d)} reçoit de nouveau des commandes.` }),
         sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Chez Fatou, cuisine du Sénégal et grillades', paused_until: '2026-12-05T13:30:00Z' },
     }),
@@ -2263,10 +2263,10 @@ const CATALOG = {
     }),
     ADMIN_ORDER_ISSUE: define('ADMIN_ORDER_ISSUE', {
         label: 'Problème signalé sur une commande', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'refunds.manage', inAppType: 'ORDER',
-        link: () => '/admin/orders?groupe=A_DECIDER',
+        link: (d) => `/admin/orders/${ident(d, 'order_id')}`,
         inApp: (d) => ({
             title: 'Signalements à traiter',
-            content: `Un client signale ${orderIssueReason(d)} sur la commande ${orderRef(d)}. D’autres signalements peuvent attendre : ouvrez la liste « À décider ».`,
+            content: `Un client signale ${orderIssueReason(d)} sur la commande ${orderRef(d)}. Les autres signalements de l’heure sont dans la liste « À décider » des commandes.`,
         }),
         sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'ADMIN', state: 'EN_PREPARATION', reason: 'INCOMPLETE' },
     }),

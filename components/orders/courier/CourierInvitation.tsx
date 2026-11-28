@@ -10,7 +10,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { UnavailableItem } from '@/components/ui/UnavailableItem';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ApiError, errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
-import { readInvitation, type CourierInvitation as Invitation } from './courier-view';
+import { COURIER_PATHS, readInvitation, type CourierInvitation as Invitation } from './courier-view';
 
 /**
  * Lot 12d — invitation à livrer pour un établissement (/courier/invitations/<id>, lien de l'avis ORDER_COURIER_INVITED) :
@@ -38,7 +38,7 @@ export function CourierInvitation({ invitationId }: { invitationId: string }) {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const body = await fetchJson<unknown>(`/api/courier/invitations/${encodeURIComponent(invitationId)}`);
+            const body = await fetchJson<unknown>(COURIER_PATHS.apiInvitation(invitationId));
             const view = readInvitation(body);
             if (!view) {
                 setError('L’invitation n’a pas pu être affichée. Réessayez.');
@@ -67,7 +67,7 @@ export function CourierInvitation({ invitationId }: { invitationId: string }) {
         setBusy(accept ? 'accept' : 'decline');
         setActionError(null);
         try {
-            const r = await sendJson<{ message?: string }>(`/api/courier/invitations/${encodeURIComponent(invitationId)}`, 'POST', { accept });
+            const r = await sendJson<{ message?: string }>(COURIER_PATHS.apiInvitation(invitationId), 'POST', { accept });
             setDone(typeof r.message === 'string' ? r.message : accept ? 'Vous livrez maintenant pour cet établissement.' : 'Invitation refusée.');
             setInv((prev) => (prev ? { ...prev, status: accept ? 'ACTIVE' : 'DECLINED' } : prev));
         } catch (err) {
@@ -85,12 +85,12 @@ export function CourierInvitation({ invitationId }: { invitationId: string }) {
                     title="Connectez-vous"
                     description="Connectez-vous avec le numéro invité pour répondre à l’invitation."
                     actionLabel="Se connecter"
-                    actionHref={`/login?redirect=${encodeURIComponent(`/courier/invitations/${invitationId}`)}`}
+                    actionHref={`/login?redirect=${encodeURIComponent(COURIER_PATHS.invitation(invitationId))}`}
                 />
             </div>
         );
     }
-    if (missing) return <UnavailableItem actionLabel="Mes livraisons" actionHref="/courier/orders" />;
+    if (missing) return <UnavailableItem actionLabel="Mes livraisons" actionHref={COURIER_PATHS.home} />;
     if (loading && !inv) {
         return (
             <div role="status" aria-busy="true" className="mx-auto max-w-lg space-y-4 pb-24 pt-6 lg:pb-12">
@@ -150,7 +150,7 @@ export function CourierInvitation({ invitationId }: { invitationId: string }) {
             )}
 
             {inv.status !== 'PENDING' && (
-                <LinkButton href="/courier/orders" variant="secondary" size="lg" fullWidth className="min-h-14 text-lg">Mes livraisons</LinkButton>
+                <LinkButton href={COURIER_PATHS.home} variant="secondary" size="lg" fullWidth className="min-h-14 text-lg">Mes livraisons</LinkButton>
             )}
         </div>
     );

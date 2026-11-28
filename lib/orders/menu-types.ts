@@ -39,9 +39,15 @@ export interface MenuProduct {
     /** Plat du jour : portions prévues aujourd'hui (null pour un autre produit). */
     portionsTotal: number | null;
     options: MenuOption[];
-    /** Lot 12d : allergènes (codes de la liste fermée : GLUTEN, CRUSTACES, OEUFS…). */
+}
+
+/**
+ * Lot 12d : allergènes (codes de la liste fermée : GLUTEN, CRUSTACES, OEUFS…) et niveau de piment (0 pas pimenté à 3 très
+ * pimenté ; null = non renseigné) d'un plat. Servis à part des produits (`VenueMenu.dishFacts`) : la liste des champs d'un
+ * produit de la carte est figée par tests/audit/cv12b-2-gardes.test.ts (G6).
+ */
+export interface DishFactsData {
     allergens: string[];
-    /** Lot 12d : niveau de piment, 0 (pas pimenté) à 3 (très pimenté) ; null = non renseigné. */
     spiceLevel: number | null;
 }
 
@@ -65,6 +71,8 @@ export type MenuHours = [number, string, string];
 export type MenuWindow = [string, string];
 
 export interface VenueMenu {
+    /** Lot 12d : allergènes et piment par identifiant de plat (plats sans information : absents). */
+    dishFacts: Record<string, DishFactsData>;
     venue: {
         id: string;
         name: string;

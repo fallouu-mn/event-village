@@ -62,8 +62,8 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     const products = useMemo(() => new Map(menu.products.map((p) => [p.id, p])), [menu.products]);
     // Lot 12d : filtre « Sans piment » (niveau 0 renseigné par l'établissement), proposé s'il garde au moins un plat
     const [noSpice, setNoSpice] = useState(false);
-    const noSpiceCount = useMemo(() => menu.products.filter((p) => p.spiceLevel === 0).length, [menu.products]);
-    const filtered = useMemo(() => (noSpice ? menu.products.filter((p) => p.spiceLevel === 0) : menu.products), [menu.products, noSpice]);
+    const noSpiceCount = useMemo(() => menu.products.filter((p) => menu.dishFacts[p.id]?.spiceLevel === 0).length, [menu.products, menu.dishFacts]);
+    const filtered = useMemo(() => (noSpice ? menu.products.filter((p) => menu.dishFacts[p.id]?.spiceLevel === 0) : menu.products), [menu.products, menu.dishFacts, noSpice]);
     const daily = useMemo(() => filtered.filter((p) => p.daily), [filtered]);
     const sections = useMemo(() => {
         const list: Array<MenuSection & { items: MenuProduct[] }> = [];
@@ -389,7 +389,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
                 </div>
             )}
 
-            <ProductSheet product={open} onClose={() => setOpen(null)} onAdd={onAdd} />
+            <ProductSheet product={open} facts={open ? menu.dishFacts[open.id] ?? null : null} onClose={() => setOpen(null)} onAdd={onAdd} />
             {verifyRetry && (
                 <PhoneVerifyDialog
                     isOpen

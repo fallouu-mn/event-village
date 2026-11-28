@@ -2,7 +2,7 @@ import { getFeatureFlags } from '@/lib/features/flags';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { dishVisual } from './dish-visual';
 import type {
-    MenuHours, MenuOption, MenuProduct, MenuSpot, MenuWindow, MenuZone, OrderMode, ProductAvailability, VenueMenu,
+    DishFactsData, MenuHours, MenuOption, MenuProduct, MenuSpot, MenuWindow, MenuZone, OrderMode, ProductAvailability, VenueMenu,
 } from './menu-types';
 
 /**
@@ -46,10 +46,14 @@ function product(r: Row): MenuProduct {
         portionsLeft: r.portions_left === null || r.portions_left === undefined ? null : num(r.portions_left),
         portionsTotal: r.portions_total === null || r.portions_total === undefined ? null : num(r.portions_total),
         options: rows(r.options).map(option),
-        // Lot 12d : allergènes (codes en capitales de la liste fermée) et piment (0 à 3, ou non renseigné)
-        allergens: Array.isArray(r.allergens) ? r.allergens.filter((a): a is string => typeof a === 'string' && /^[A-Z_]{2,20}$/.test(a)) : [],
-        spiceLevel: typeof r.spice_level === 'number' && r.spice_level >= 0 && r.spice_level <= 3 ? r.spice_level : null,
     };
+}
+
+/** Lot 12d : allergènes (codes en capitales de la liste fermée) et piment (0 à 3, ou non renseigné) d'un plat. */
+function dishFacts(r: Row): DishFactsData | null {
+    const allergens = Array.isArray(r.allergens) ? r.allergens.filter((a): a is string => typeof a === 'string' && /^[A-Z_]{2,20}$/.test(a)) : [];
+    const spiceLevel = typeof r.spice_level === 'number' && r.spice_level >= 0 && r.spice_level <= 3 ? r.spice_level : null;
+    return allergens.length > 0 || spiceLevel !== null ? { allergens, spiceLevel } : null;
 }
 
 /** Mise en forme de la réponse de order_venue_menu (champs inconnus ignorés, jamais rendus tels quels). */
@@ -61,6 +65,8 @@ export function venueMenuFrom(data: unknown): VenueMenu | null {
     if (typeof venue.id !== 'string') return null;
     const categoryNames = new Map(rows(d.categories).map((c) => [String(c.id), String(c.name ?? '')]));
     return {
+        // Lot 12d : allergènes et piment, à part des produits (champs d'un produit figés par l'audit G6)
+        dishFacts: Object.fromEntries(rows(d.products).flatMap((r) => { const f = dishFacts(r); return f ? [[String(r.id), f]] : []; })),
         venue: {
             id: venue.id,
             name: String(venue.name ?? ''),

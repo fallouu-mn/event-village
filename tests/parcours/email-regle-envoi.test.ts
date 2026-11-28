@@ -69,7 +69,11 @@ const CATALOG_TYPES = Object.keys(CATALOG).sort();
  * PRODUCT_REVIEW_DECIDED, et ADMIN_ORDER_REFUND_BLOCKED, SMS qui double ADMIN_REFUND_TO_RETRY et ADMIN_CASHOUT_UNCERTAIN,
  * qui ont déjà leur email.
  */
-const G49_EXCLUDED = new Set(['PUSH_TEST', 'COUNTER_RECEIPT', 'ADMIN_REVIEW_SMS', 'PRODUCT_DECISION_SMS', 'ADMIN_ORDER_REFUND_BLOCKED']);
+// Lot 12d (ajout signalé au rapport) : petites étapes des commandes en cloche et notification du téléphone seulement
+// (décision du client du 26-27/11 : « cloche et notification pour les petites étapes »)
+const G49_EXCLUDED = new Set(['PUSH_TEST', 'COUNTER_RECEIPT', 'ADMIN_REVIEW_SMS', 'PRODUCT_DECISION_SMS', 'ADMIN_ORDER_REFUND_BLOCKED',
+    'ORDER_COURIER_ANSWERED', 'ORDER_COURIER_REMOVED', 'ORDER_COURIER_RETURN', 'ORDER_CLIENT_ABSENT_PRO', 'ORDER_ABSENCE_DECIDED_PRO',
+    'ORDER_ISSUE_PRO', 'ORDER_ISSUE_CLOSED', 'ORDER_CLOSURE_ORDERS', 'ORDER_PAUSE_ENDED']);
 const CATEGORIES: CategorySpec[] = [{ name: 'Standard', price: 3_000, total: 40, maxPerOrder: 10 }];
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
 const TRANSFER_CANCEL_ROUTE = '../../app/api/tickets/transfers/[id]/cancel/route';

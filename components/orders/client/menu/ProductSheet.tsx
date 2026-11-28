@@ -9,7 +9,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { Textarea } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa } from '@/lib/format';
-import type { MenuProduct } from '@/lib/orders/menu-types';
+import type { DishFactsData, MenuProduct } from '@/lib/orders/menu-types';
 import { MAX_QUANTITY, NOTE_MAX } from '@/lib/orders/cart-client';
 import { blockedReason } from './ProductCard';
 import { portionsText } from './DailyBanner';
@@ -21,8 +21,10 @@ import { DishFacts } from './DishFacts';
  * (cases, prix ajouté tel que servi), quantité de 1 à 99, note pour la cuisine, bouton « Ajouter · <prix de la carte> ».
  * Le prix du bouton est le prix unitaire de la carte, tel que servi : le total vient du devis de la base, dans le panier.
  */
-export function ProductSheet({ product, onClose, onAdd }: {
+export function ProductSheet({ product, facts, onClose, onAdd }: {
     product: MenuProduct | null;
+    /** Lot 12d : allergènes et piment du plat (servis à part des produits). */
+    facts?: DishFactsData | null;
     onClose: () => void;
     onAdd: (p: MenuProduct, quantity: number, optionIds: string[], notes: string) => void;
 }) {
@@ -81,7 +83,7 @@ export function ProductSheet({ product, onClose, onAdd }: {
                     {product.description && <p className="whitespace-pre-line text-base leading-relaxed text-foreground">{product.description}</p>}
                 </div>
                 {/* Lot 12d : allergènes et piment, servis par la carte */}
-                <DishFacts allergens={product.allergens} spiceLevel={product.spiceLevel} />
+                <DishFacts allergens={facts?.allergens} spiceLevel={facts?.spiceLevel} />
                 {blocked && (
                     <StatusBanner tone={blocked.tone === 'warning' ? 'warning' : 'neutral'} title={blocked.label}>
                         {product.regulated

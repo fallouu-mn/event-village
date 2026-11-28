@@ -171,7 +171,7 @@ export function AbsenceDecisionPanel({ orderId, waitUntil, onDone }: { orderId: 
                     <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning-text" aria-hidden="true"><UserX size={20} /></span>
                     <div className="min-w-0">
                         <h2 id="absence-decision-title" className="text-lg font-semibold text-foreground-strong">Décider après l’absence du client</h2>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground tabular-nums">
                             Le livreur a appelé deux fois sans réponse{waitUntil ? `, puis attendu jusqu’à ${formatTime(waitUntil)}` : ''}. Choisissez la suite : le client et l’établissement reçoivent votre motif.
                         </p>
                     </div>
@@ -230,7 +230,7 @@ export function AbsenceDecisionPanel({ orderId, waitUntil, onDone }: { orderId: 
                         <p className="text-sm text-muted-foreground">Montant rendu au client, calculé par Event Village :</p>
                         <p className="text-2xl font-bold tabular-nums text-foreground-strong">{formatFcfa(preview.refundAmount)}</p>
                         <p className="text-sm text-muted-foreground">Payé en ligne : <span className="tabular-nums">{formatFcfa(preview.paid)}</span></p>
-                        <div className="flex flex-col gap-2 sm:flex-row">
+                        <div className="flex flex-col gap-2 tabular-nums sm:flex-row">
                             <Button variant={preview.refundAmount > 0 ? 'primary' : 'danger'} leftIcon={<CheckCircle2 size={18} aria-hidden="true" />} onClick={() => void confirm()} isLoading={busy}>
                                 {preview.refundAmount > 0 ? `Confirmer : rembourser ${formatFcfa(preview.refundAmount)}` : 'Confirmer : ne rien rembourser'}
                             </Button>

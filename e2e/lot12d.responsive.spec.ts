@@ -6,18 +6,20 @@
  * « …responsive.spec.ts »).
  *
  * Données propres au spec (la graine de démonstration n'est pas touchée) : un établissement neuf de la partenaire de
- * démonstration « organisateur2 », validé, ouvert 24 h sur 24, qui prend des commandes (livraison, retrait, paiement à la
+ * démonstration « organisateur » (session déjà préparée), validé, ouvert 24 h sur 24, qui prend des commandes (livraison, retrait, paiement à la
  * remise : aucun paiement réel) ; des plats avec allergènes et piment ; un livreur actif (compte neuf), invité aussi par
- * « organisateur » (invitation en attente) ; des livraisons à chaque étape (prête, en route, client absent en attente,
+ * « organisateur2 » (invitation en attente), qui passe aussi deux commandes à retirer comme client ; des livraisons à chaque étape (prête, en route, client absent en attente,
  * client absent à décider : horloge avancée par une écriture LOCALE de la base, SUPABASE_DB_URL de .env.e2e, hôte local
- * vérifié) ; deux commandes en préparation de la cliente (dont une signalée) ; une commande prévue demain dans une
+ * vérifié) ; deux commandes en préparation du même compte, client cette fois (dont une signalée) ; une commande prévue demain dans une
  * fermeture exceptionnelle posée ensuite ; une pause de 60 minutes.
  *
  * Interrupteurs : features.orders_enabled par le compteur partagé e2e/support/orders-service.ts (lots 12b et 12c) ;
  * features.tables_enabled (page des fermetures, sous la garde des tables) par e2e/support/tables-service.ts ; sous le verrou
  * des services (groupe « services »).
  *
- * Une seule connexion par compte et par spec (livreur, cliente, partenaire ; l'administration reprend la session de fumée).
+ * UNE seule connexion dans tout le spec (le livreur, aussi client de ses deux commandes à retirer) : quota de 30 connexions
+ * par adresse et par heure du job (PASSWORD_LOGIN_PER_IP_HOUR, run 789 : 429 au spec du 12c) ; partenaire et administration
+ * reprennent les sessions préparées (organisateur, fumee-superadmin).
  * Pour chaque thème (clair, sombre) et chaque largeur (390 et 1 440 px) : contrôle responsive (0 défaut bloquant) et
  * capture. Captures : .e2e-captures/captures-responsive/l12d-<écran>__<largeur>__<thème>.jpg (publiées sur ci-results).
  */
@@ -54,12 +56,11 @@ interface Seeded {
     closureId: string;
     invitationId: string;
     courier: ControllerAccount;
-    client: ControllerAccount;
     orders: { prete: Ref; route: Ref; absent: Ref; equipe: Ref; prep: Ref; signale: Ref; fermeture: Ref };
 }
 
 type SessionState = Awaited<ReturnType<BrowserContext['storageState']>>;
-const sessions: Record<'courier' | 'client' | 'partner', SessionState | null> = { courier: null, client: null, partner: null };
+const sessions: Record<'courier', SessionState | null> = { courier: null };
 
 async function settle(page: Page): Promise<void> {
     await page.evaluate(() => document.fonts.ready.then(() => true));
@@ -133,10 +134,10 @@ function tomorrow(): string {
 
 async function seed(superadmin: string): Promise<Seeded> {
     const demo = readDemoIds().accounts;
-    const owner = demo.organisateur2;
+    const owner = demo.organisateur;
     const service = serviceClient();
     const { data: fiche, error: fErr } = await service.from('partners').select('id, status').eq('user_id', owner.userId).order('created_at').limit(1).maybeSingle();
-    if (fErr || !fiche || fiche.status !== 'VALIDE') throw new Error(`[l12d] fiche de organisateur2 : ${fErr?.message ?? String(fiche?.status)}`);
+    if (fErr || !fiche || fiche.status !== 'VALIDE') throw new Error(`[l12d] fiche de organisateur : ${fErr?.message ?? String(fiche?.status)}`);
 
     const { data: venue, error: vErr } = await service.from('venues').insert({
         partner_id: fiche.id, kind: 'RESTAURANT', name: `Le Baobab ${STAMP}`, address: 'Rue 10, Médina', city: 'Dakar',
@@ -163,14 +164,14 @@ async function seed(superadmin: string): Promise<Seeded> {
     await save({ name: 'Bissap maison', description: 'Fleurs d’hibiscus, menthe fraîche.', price: 1_000 }, [], 0);
     await save({ name: 'Pastels au thon', description: 'Chaussons frits, sauce très pimentée.', price: 2_000 }, ['POISSON', 'GLUTEN', 'OEUFS'], 3);
 
-    // Livreur actif ; invitation en attente d'une autre partenaire (organisateur)
+    // Livreur actif ; invitation en attente d'une autre partenaire (organisateur2)
     const courier = await createClientAccount(`l12d-livreur-${STAMP}`);
     const inv = await rpcOk('order_courier_invite', { actor_id: owner.userId, phone: courier.phone });
     await rpcOk('order_courier_respond', { actor_id: courier.userId, invitation_id: inv.invitation_id, accept: true });
-    const other = await rpcOk('order_courier_invite', { actor_id: demo.organisateur.userId, phone: courier.phone });
+    const other = await rpcOk('order_courier_invite', { actor_id: demo.organisateur2.userId, phone: courier.phone });
 
-    // Commandes payables à la remise (au plus 3 en cours par cliente)
-    const client = await createClientAccount(`l12d-cliente-${STAMP}`);
+    // Commandes payables à la remise (au plus 3 en cours par compte) ; le livreur est aussi le client de deux retraits
+    const client = courier;
     const buyers: ControllerAccount[] = [];
     for (const k of ['a', 'b']) buyers.push(await createClientAccount(`l12d-${k}-${STAMP}`));
     const line = (productId: string, quantity: number) => ({ product_id: productId, quantity, option_ids: [] });
@@ -226,7 +227,7 @@ async function seed(superadmin: string): Promise<Seeded> {
     await rpcOk('order_venue_pause', { actor_id: owner.userId, venue_id: venueId, minutes: 60 });
 
     return {
-        venueId, closureId: String(closure.id), invitationId: String(other.invitation_id), courier, client,
+        venueId, closureId: String(closure.id), invitationId: String(other.invitation_id), courier,
         orders: { prete, route, absent: absentOrder, equipe, prep, signale, fermeture },
     };
 }
@@ -246,7 +247,6 @@ for (const theme of THEMES) {
         try {
             seeded ??= await seed(superadmin);
             const d = seeded;
-            const owner = readDemoIds().accounts.organisateur2;
 
             // ── Livreur ───────────────────────────────────────────────────────────────────────────────────────
             const cour = await signedContext(browser, testInfo, theme.scheme, 'courier', d.courier.email);
@@ -331,7 +331,7 @@ for (const theme of THEMES) {
             await adm.close();
 
             // ── Partenaire : fermeture avec commandes, pause ──────────────────────────────────────────────────
-            const org = await signedContext(browser, testInfo, theme.scheme, 'partner', owner.email);
+            const org = await themedContext(browser, testInfo, theme.scheme, requireStorageState('organisateur'));
             const op = await org.newPage();
             for (const w of WIDTHS) {
                 await op.setViewportSize({ width: w.width, height: w.height });
@@ -354,7 +354,8 @@ for (const theme of THEMES) {
             await org.close();
 
             // ── Cliente : signalement, bandeau de pause, allergènes ───────────────────────────────────────────
-            const cli = await signedContext(browser, testInfo, theme.scheme, 'client', d.client.email);
+            // Même compte que le livreur (session reprise : aucune connexion de plus)
+            const cli = await signedContext(browser, testInfo, theme.scheme, 'courier', d.courier.email);
             const pp = await cli.newPage();
             for (const w of WIDTHS) {
                 await pp.setViewportSize({ width: w.width, height: w.height });

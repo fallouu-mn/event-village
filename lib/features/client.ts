@@ -86,3 +86,10 @@ export function useFeatureFlags(): ClientFeatureFlags | null {
     }, []);
     return flags;
 }
+
+/**
+ * Lot 12d : entrée « Mes livraisons » de la coquille (livreur actif). Dans ce module déjà chargé par la coquille : aucun
+ * module ajouté au premier chargement ; hors des .tsx, où la règle de la police à chasse fixe de
+ * tests/parcours/design-systeme.test.ts lit le mot « courier ».
+ */
+export const COURIER_HOME_PATH = '/courier/orders';

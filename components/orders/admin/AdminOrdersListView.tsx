@@ -111,7 +111,7 @@ export function AdminOrdersListView({ initialGroup, initialQuery, initialPage }:
             render: (o) => (
                 <span className="break-words">
                     {o.venue_name}
-                    {o.partner_name && o.partner_name !== o.venue_name && <span className="block text-xs text-muted-foreground">{o.partner_name}</span>}
+                    {o.partner_name && o.partner_name !== o.venue_name && <span className="block text-sm text-muted-foreground">{o.partner_name}</span>}
                 </span>
             ),
         },
@@ -166,7 +166,7 @@ export function AdminOrdersListView({ initialGroup, initialQuery, initialPage }:
             ) : data && (
                 <div className={loading ? 'opacity-60 transition-opacity duration-fast ease-standard' : 'transition-opacity duration-fast ease-standard'} aria-busy={loading}>
                     {error && <p role="alert" className="mb-3 text-sm text-danger-text">{error}</p>}
-                    <p className="mb-3 text-sm text-muted-foreground" aria-live="polite">
+                    <p className="mb-3 text-sm text-muted-foreground tabular-nums" aria-live="polite">
                         {data.total === 0 ? 'Aucune commande' : `${formatInteger(data.total)} commande${data.total > 1 ? 's' : ''}`}
                         {query ? ` pour « ${query} »` : ''}
                     </p>
@@ -206,11 +206,11 @@ export function AdminOrdersListView({ initialGroup, initialQuery, initialPage }:
                         empty={<EmptyState illustrated icon={<PackageSearch size={32} aria-hidden="true" />} title={query ? 'Aucune commande trouvée' : EMPTY_TEXT[group].title} description={query ? 'Vérifiez le numéro ou le nom saisi, ou choisissez un autre groupe.' : EMPTY_TEXT[group].description} />}
                     />
                     {pages > 1 && (
-                        <nav aria-label="Pages de la liste des commandes" className="mt-6 flex items-center justify-between gap-3">
+                        <nav aria-label="Pages de la liste des commandes" className="mt-6 flex flex-wrap items-center justify-between gap-3">
                             <Button variant="secondary" onClick={() => setPage(Math.max(1, current - 1))} disabled={current <= 1 || loading} leftIcon={<ChevronLeft size={18} aria-hidden="true" />}>
                                 Précédente
                             </Button>
-                            <p className="text-sm tabular-nums text-muted-foreground" aria-live="polite">Page {formatInteger(current)} sur {formatInteger(pages)}</p>
+                            <p className="order-first w-full text-center text-sm tabular-nums text-muted-foreground sm:order-none sm:w-auto" aria-live="polite">Page {formatInteger(current)} sur {formatInteger(pages)}</p>
                             <Button variant="secondary" onClick={() => setPage(Math.min(pages, current + 1))} disabled={current >= pages || loading} rightIcon={<ChevronRight size={18} aria-hidden="true" />}>
                                 Suivante
                             </Button>

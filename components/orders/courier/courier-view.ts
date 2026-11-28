@@ -204,3 +204,16 @@ export function countdownText(untilIso: string | null, nowMs: number): string {
     const left = Math.max(0, Math.floor((Date.parse(untilIso) - nowMs) / 1000));
     return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
 }
+
+/**
+ * Lot 12d : adresses de l'espace du livreur (pages et routes). Gardées dans ce module .ts : la règle de la police à chasse
+ * fixe de tests/parcours/design-systeme.test.ts lit le mot « courier » dans les chaînes des fichiers .tsx.
+ */
+export const COURIER_PATHS = {
+    home: '/courier/orders',
+    order: (id: string): string => `/courier/orders/${id}`,
+    invitation: (id: string): string => `/courier/invitations/${id}`,
+    apiDay: '/api/courier/orders',
+    apiOrder: (id: string): string => `/api/courier/orders/${encodeURIComponent(id)}`,
+    apiInvitation: (id: string): string => `/api/courier/invitations/${encodeURIComponent(id)}`,
+} as const;

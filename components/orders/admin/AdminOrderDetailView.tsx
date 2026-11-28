@@ -286,7 +286,7 @@ export function AdminOrderDetailView({ orderId }: { orderId: string }) {
 
                 <div className="space-y-6">
                     <Section id="montants" title="Montants" icon={<Receipt size={18} />}>
-                        <dl className="divide-y divide-border">
+                        <dl className="divide-y divide-border tabular-nums">
                             <Row term="Articles">{formatFcfa(a.items_amount)}</Row>
                             {a.delivery_fee > 0 && <Row term="Livraison">{formatFcfa(a.delivery_fee)}</Row>}
                             <Row term="Total de la commande" strong>{formatFcfa(a.goods_total)}</Row>

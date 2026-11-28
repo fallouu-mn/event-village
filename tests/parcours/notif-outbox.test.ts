@@ -195,6 +195,20 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('PRODUCT_DECISION_SMS', [S], 'PARTNER', 'A'),
     ess('ADMIN_ORDER_REFUND_BLOCKED', [S], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M], 'ADMIN', 'B', 'partners.validate'),
+    // Lot 12d (ajouts signalés au rapport) : livreur (A6, A7), client absent, signalements, fermetures, pause
+    ess('ORDER_COURIER_ANSWERED', [I, P], 'PARTNER', 'B'),
+    ess('ORDER_COURIER_REMOVED', [I, P], 'CLIENT', 'A'),
+    ess('ORDER_COURIER_RETURN', [I, P], 'CLIENT', 'A'),
+    ess('ORDER_CLIENT_ABSENT', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_CLIENT_ABSENT_PRO', [I, P], 'PARTNER', 'A'),
+    ess('ORDER_ABSENCE_DECIDED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_ABSENCE_DECIDED_PRO', [I, P], 'PARTNER', 'A'),
+    ess('ORDER_ISSUE_PRO', [I, P], 'PARTNER', 'A'),
+    ess('ORDER_ISSUE_CLOSED', [I, P], 'CLIENT', 'A'),
+    ess('ORDER_CLOSURE_ORDERS', [I, P], 'PARTNER', 'B'),
+    ess('ORDER_PAUSE_ENDED', [I, P], 'PARTNER', 'B'),
+    ess('ADMIN_ORDER_ABSENT', [I, M], 'ADMIN', 'B', 'refunds.manage'),
+    ess('ADMIN_ORDER_ISSUE', [I, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49

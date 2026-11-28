@@ -23,11 +23,11 @@ const PUBLIC_FUNCTIONS = [
     'order_issue_report', 'order_issue_close', 'order_admin_list', 'order_admin_view', 'order_closure_orders', 'order_closure_keep',
     'order_venue_pause', 'order_partner_pauses', 'order_product_details_set',
     // recopiées
-    'order_view', 'order_payable_refusal', 'order_quote_compute', 'order_venue_menu',
+    'order_view', 'order_payable_refusal', 'order_quote', 'order_create_checked', 'order_venue_menu',
 ];
 const PRIVATE_FUNCTIONS = [
     'order_person_short', 'order_courier_status_notify', 'order_admin_allowed', 'order_admin_role', 'order_closure_hits',
-    'order_closure_notify', 'order_close_apply',
+    'order_closure_notify', 'order_close_apply', 'order_pause_refusal',
 ];
 
 describe('Lot 12d — migrations', () => {

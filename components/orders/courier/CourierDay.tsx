@@ -11,7 +11,8 @@ import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { usePolledJson } from '@/components/orders/partner/orders/usePolledJson';
 import { formatFcfa } from '@/lib/format';
-import { GROUP_LABELS, GROUP_ORDER, courierStateLabel, groupOf, hourText, readDay, type CourierDelivery } from './courier-view';
+import { errorMessage } from '@/components/partner/fetch-json';
+import { COURIER_PATHS, GROUP_LABELS, GROUP_ORDER, courierStateLabel, groupOf, hourText, readDay, type CourierDelivery } from './courier-view';
 
 /**
  * Lot 12d — livraisons du jour du livreur (/courier/orders) : GET /api/courier/orders relu toutes les 15 secondes tant que
@@ -28,7 +29,7 @@ function DeliveryCard({ d }: { d: CourierDelivery }) {
     return (
         <li>
             <Link
-                href={`/courier/orders/${d.id}`}
+                href={COURIER_PATHS.order(d.id)}
                 className={cn(
                     'flex min-h-14 items-stretch gap-3 rounded-3xl border-2 bg-card p-4 transition-colors duration-fast ease-standard hover:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring',
                     group === 'ABSENT' ? 'border-warning-border' : group === 'ROUTE' ? 'border-primary' : 'border-border',
@@ -38,7 +39,7 @@ function DeliveryCard({ d }: { d: CourierDelivery }) {
                 <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <span className="text-lg font-extrabold tabular-nums text-foreground-strong">{d.orderNumber}</span>
-                        <span className={cn('rounded-full border px-2.5 py-0.5 text-xs font-bold', group === 'ABSENT' ? 'border-warning-border bg-warning-soft text-warning-text' : 'border-border bg-muted text-foreground-strong')}>
+                        <span className={cn('rounded-full border px-2.5 py-0.5 text-sm font-bold', group === 'ABSENT' ? 'border-warning-border bg-warning-soft text-warning-text' : 'border-border bg-muted text-foreground-strong')}>
                             {courierStateLabel(d)}
                         </span>
                     </div>
@@ -59,7 +60,7 @@ function DeliveryCard({ d }: { d: CourierDelivery }) {
                             </span>
                         )}
                         {d.balanceDue > 0 && (
-                            <span className="inline-flex items-center gap-1.5 font-bold text-warning-text">
+                            <span className="inline-flex items-center gap-1.5 font-bold tabular-nums text-warning-text">
                                 <Wallet size={16} aria-hidden="true" />À encaisser : {formatFcfa(d.balanceDue)}
                             </span>
                         )}
@@ -73,7 +74,7 @@ function DeliveryCard({ d }: { d: CourierDelivery }) {
 
 export function CourierDay() {
     const { isAuthenticated, isLoading: authLoading } = useAuth();
-    const polled = usePolledJson<unknown>(authLoading || !isAuthenticated ? null : '/api/courier/orders', POLL_MS);
+    const polled = usePolledJson<unknown>(authLoading || !isAuthenticated ? null : COURIER_PATHS.apiDay, POLL_MS);
     const day = polled.data ? readDay(polled.data) : null;
 
     if (!authLoading && !isAuthenticated) {
@@ -85,7 +86,7 @@ export function CourierDay() {
                     title="Connectez-vous"
                     description="Vos livraisons s’affichent une fois connecté avec le compte invité par l’établissement."
                     actionLabel="Se connecter"
-                    actionHref={`/login?redirect=${encodeURIComponent('/courier/orders')}`}
+                    actionHref={`/login?redirect=${encodeURIComponent(COURIER_PATHS.home)}`}
                 />
             </div>
         );
@@ -108,7 +109,7 @@ export function CourierDay() {
                     <span className="sr-only">Chargement de vos livraisons…</span>
                 </div>
             ) : polled.error && !day ? (
-                <ErrorState title="Livraisons indisponibles" description={polled.error.message} onRetry={() => void polled.reload()} />
+                <ErrorState title="Livraisons indisponibles" description={errorMessage(polled.error, 'Vos livraisons ne se chargent pas. Réessayez.')} onRetry={() => void polled.reload()} />
             ) : day ? (
                 <>
                     {day.invitations.length > 0 && (
@@ -118,7 +119,7 @@ export function CourierDay() {
                                 {day.invitations.map((inv) => (
                                     <li key={inv.id}>
                                         <Link
-                                            href={`/courier/invitations/${inv.id}`}
+                                            href={COURIER_PATHS.invitation(inv.id)}
                                             className="flex min-h-14 items-center gap-3 rounded-3xl border-2 border-primary bg-primary-soft p-4 text-primary-text focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring"
                                         >
                                             <UserPlus size={22} aria-hidden="true" className="flex-shrink-0" />
@@ -165,7 +166,7 @@ export function CourierDay() {
                                         <div className="text-right text-sm">
                                             <p className="font-semibold text-foreground-strong">{d.stateLabel}{d.closedAt ? ` à ${hourText(d.closedAt)}` : ''}</p>
                                             {d.onsiteAmount !== null && d.onsiteAmount > 0 && (
-                                                <p className="text-muted-foreground">Reste reçu : {formatFcfa(d.onsiteAmount)}</p>
+                                                <p className="text-muted-foreground tabular-nums">Reste reçu : {formatFcfa(d.onsiteAmount)}</p>
                                             )}
                                         </div>
                                     </li>

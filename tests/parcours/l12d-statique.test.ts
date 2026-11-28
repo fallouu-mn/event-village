@@ -1,8 +1,8 @@
 /**
  * Lot 12d — contrôles sans base (lecture des migrations, du catalogue et des écrans).
  *
- *  S1 Recopies : chacune des 5 fonctions recopiées par le lot (order_view, order_close_apply, order_payable_refusal,
- *     order_quote_compute, order_venue_menu) l'est UNE seule fois dans les migrations du lot (fichiers « _l12d_ ») et
+ *  S1 Recopies : chacune des 6 fonctions recopiées par le lot (order_view, order_close_apply, order_payable_refusal,
+ *     order_quote, order_create_checked, order_venue_menu) l'est UNE seule fois dans les migrations du lot (fichiers « _l12d_ ») et
  *     garde chaque ligne de sa dernière définition antérieure (commentaires et blancs retirés, espaces réduits), sauf les
  *     lignes remplacées déclarées ici avec leurs remplaçantes (qui doivent y être).
  *  S2 Fonctions jamais recopiées par le lot : order_courier_action, order_courier_respond, order_courier_remove (avis A6
@@ -34,7 +34,8 @@ const RECOPIED: Array<{ schema: 'public' | 'private'; name: string; from: string
     { schema: 'public', name: 'order_view', from: '20261130000006_l12a_etapes.sql' },
     { schema: 'private', name: 'order_close_apply', from: '20261130000006_l12a_etapes.sql' },
     { schema: 'public', name: 'order_payable_refusal', from: '20261130000005_l12a_paiement.sql' },
-    { schema: 'public', name: 'order_quote_compute', from: '20261224000003_l12c_devis.sql' },
+    { schema: 'public', name: 'order_quote', from: '20261130000004_l12a_devis_commande.sql' },
+    { schema: 'public', name: 'order_create_checked', from: '20261226000003_l12b_garde_prix.sql' },
     { schema: 'public', name: 'order_venue_menu', from: '20261226000002_l12b_carte_des_plats.sql' },
 ];
 
@@ -53,6 +54,8 @@ const NEVER_RECOPIED = [
     'order_courier_action', 'order_courier_respond', 'order_courier_remove', 'order_product_save', 'order_cancel',
     'order_partner_action', 'order_tick', 'finance_setting_set', 'fin_setting_valid', 'platform_settings_defaults',
     'notification_outbox_claim', 'notif_cashouts_notify', 'notification_sync_log',
+    // tests/audit/cv12c-3-statique.test.ts S1 : la recopie du 12c est comparée à la dernière définition hors de son lot
+    'order_quote_compute', 'order_create', 'product_regulated', 'products_order_guard', 'order_product_regulation_decide',
 ];
 
 const NEW_PUBLIC = [
@@ -62,6 +65,7 @@ const NEW_PUBLIC = [
 ];
 const NEW_PRIVATE = [
     'order_person_short', 'order_courier_status_notify', 'order_admin_allowed', 'order_admin_role', 'order_closure_hits', 'order_closure_notify',
+    'order_pause_refusal',
 ];
 
 function definitions(schema: string, name: string): Array<{ file: string; body: string }> {
@@ -82,7 +86,7 @@ const lines = (body: string): string[] => body.split(/\r?\n/).map((l) => l.repla
 const lotText = (): string => FILES.filter(LOT).map((f) => readFileSync(join(MIGRATIONS, f), 'utf8')).join('\n');
 
 describe('l12d — contrôles sans base', () => {
-    test('S1 — 5 recopies : une seule chacune, depuis la dernière définition, aucune ligne perdue (remplacements déclarés)', () => {
+    test('S1 — 6 recopies : une seule chacune, depuis la dernière définition, aucune ligne perdue (remplacements déclarés)', () => {
         const report: string[] = [];
         for (const r of RECOPIED) {
             const defs = definitions(r.schema, r.name);

@@ -62,7 +62,7 @@ const lazyPart = <P,>(load: () => Promise<React.ComponentType<P>>, what: string)
   }));
 const PushMenu = lazyPart(() => import('./PushMenu').then((m) => m.PushMenu), 'menu');
 const ProSidebar = lazyPart(() => import('./ProSidebar').then((m) => m.ProSidebar), 'barre latérale');
-import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
+import { COURIER_HOME_PATH, useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
 /** Interrupteur SUPERADMIN d'un service (features.halls_enabled, features.tables_enabled, features.orders_enabled). */
@@ -232,7 +232,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   // Lot 12d : « Mes livraisons » pour un livreur actif, depuis le profil déjà lu (/api/auth/me : courier_active) ; icône
   // déjà importée, aucun module de plus ; masquée service des commandes fermé
   if (mounted && profile?.courier_active === true) {
-    proItems.push(...visibleItems([{ name: 'Mes livraisons', href: '/courier/orders', icon: ShoppingBag, feature: 'orders' }]));
+    proItems.push(...visibleItems([{ name: 'Mes livraisons', href: COURIER_HOME_PATH, icon: ShoppingBag, feature: 'orders' }]));
   }
 
   if (!isPartner && !isAdmin && !isController) {

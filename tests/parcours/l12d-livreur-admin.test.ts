@@ -563,8 +563,9 @@ describe('I. Allergènes et piment', () => {
             ['INVALID_ALLERGENS', 'INVALID_SPICE']);
         assert.equal((await put(partnerB, { allergens: [], spiceLevel: 0 })).status, 404, 'produit d’une autre partenaire');
         const menu = await reply(await menuGet(req(`/api/restaurants/${shop}/menu`, 'GET', null), ctx(shop)));
-        const dish = ((menu.body.menu as Row).products as Row[]).find((x) => x.id === p)!;
-        assert.deepEqual([dish.allergens, dish.spiceLevel], [['GLUTEN', 'MOUTARDE'], 2]);
+        const dish = ((menu.body.menu as Row).dishFacts as Record<string, Row>)[p];
+        assert.deepEqual([dish?.allergens, dish?.spiceLevel], [['GLUTEN', 'MOUTARDE'], 2]);
+        assert.equal('allergens' in (((menu.body.menu as Row).products as Row[]).find((x) => x.id === p) ?? {}), false, 'champs d’un produit inchangés (audit G6)');
         const rest = await userClient(client.accessToken).from('products').select('id, allergens, spice_level').eq('id', p);
         assert.ok(rest.error, 'allergènes non lisibles par la REST (lus par la carte servie)');
         // Produit retiré de la carte (archivé) : figé
