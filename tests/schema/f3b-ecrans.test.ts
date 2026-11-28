@@ -109,8 +109,9 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
         const cases: Array<[string[], string[]]> = [
             [['users.read'], ['/admin/users', '/admin/referral']],
             [['referrals.manage'], ['/admin/referral']],
-            [['payments.read'], ['/admin/finance']],
-            [['refunds.manage'], ['/admin/finance']],
+            // Lot 12d (modification signalée au rapport) : « Commandes » (/admin/orders) avec payments.read ou refunds.manage
+            [['payments.read'], ['/admin/orders', '/admin/finance']],
+            [['refunds.manage'], ['/admin/orders', '/admin/finance']],
             [['communications.manage'], ['/admin/communications']],
             [['notifications.read'], ['/admin/notifications']],
             [['settings.read'], ['/admin/finance-settings']],
@@ -133,7 +134,8 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
         const nav = await navFor([], true);
         // Lot 10b (point 4) : « Salles à valider » (/admin/halls) après « Catalogues et services » (test modifié, signalé)
         // Lot 12c : « Produits à vérifier » (/admin/products) après « Salles à valider » (test modifié, signalé)
-        assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/halls', '/admin/products', '/admin/finance', '/admin/referral',
+        // Lot 12d (modification signalée au rapport) : « Commandes » (/admin/orders) après « Produits à vérifier »
+        assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/halls', '/admin/products', '/admin/orders', '/admin/finance', '/admin/referral',
             '/admin/communications', '/admin/a-la-une', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan', '/admin/securite']);
         assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard', '/admin/events', '/admin/users', '/admin/finance', '/admin/audit']);
         assert.ok(!JSON.stringify(nav).includes('/admin/pricing'), '« Tarification » encore au menu');
