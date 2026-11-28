@@ -16,6 +16,7 @@ import { OPEN_ORDER_STATES, clientStateLabel, codeExpected, stateTone } from '@/
 import { ORDER_MODE_LABELS, type OrderMode } from '@/lib/orders/menu-types';
 import { isRecord, nonEmptyString, readJsonBody, serverErrorMessage } from '@/lib/payments/payment-client';
 import { HandoverCode } from './HandoverCode';
+import { AbsenceNotice, IssueReport } from './IssueReport';
 import { HoldCountdown, OrderPayPanel } from './OrderPayPanel';
 import { OrderTimeline } from './OrderTimeline';
 import { hourText, isToday, readOrderView, type OrderView } from './order-view';
@@ -206,6 +207,8 @@ export function OrderTracking({ orderId, intent = null }: { orderId: string; int
     const finalBad = !open && o.state !== 'REMISE';
     const showCode = open && o.code?.sent === true && codeExpected(o.state, o.mode);
     const when = whenText(o);
+    // Lot 12d : libellé servi pour une livraison close « non retirée » (« Client absent ») ; sinon le libellé du client
+    const stateText = o.state === 'NON_RETIREE' && o.stateLabel ? o.stateLabel : clientStateLabel(o.state, o.mode);
 
     return (
         <div className="mx-auto max-w-5xl space-y-6 pb-24 lg:pb-12">
@@ -213,7 +216,7 @@ export function OrderTracking({ orderId, intent = null }: { orderId: string; int
 
             <header className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={stateTone(o.state)} size="sm">{clientStateLabel(o.state, o.mode)}</Badge>
+                    <Badge variant={stateTone(o.state)} size="sm">{stateText}</Badge>
                     <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                         <ModeIcon size={16} aria-hidden="true" />
                         {modeLabel}
@@ -221,10 +224,13 @@ export function OrderTracking({ orderId, intent = null }: { orderId: string; int
                     {o.orderNumber && <span className="text-sm tabular-nums text-muted-foreground">{`Commande ${o.orderNumber}`}</span>}
                 </div>
                 <h1 className="break-words text-2xl font-extrabold leading-tight tracking-tight text-foreground-strong sm:text-3xl">{o.venueName}</h1>
-                <p className="sr-only" aria-live="polite">{`État de la commande : ${clientStateLabel(o.state, o.mode)}`}</p>
+                <p className="sr-only" aria-live="polite">{`État de la commande : ${stateText}`}</p>
             </header>
 
             {notice && <StatusBanner tone="success" title="C’est fait">{notice}</StatusBanner>}
+
+            {/* Lot 12d : le livreur ne joint pas le client (attente de 30 minutes), puis décision de l'équipe */}
+            <AbsenceNotice order={o} hourOf={hourText} />
 
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
                 <div className="space-y-6">
@@ -239,7 +245,7 @@ export function OrderTracking({ orderId, intent = null }: { orderId: string; int
                     )}
 
                     {finalBad && (
-                        <StatusBanner tone="danger" title={clientStateLabel(o.state, o.mode)} icon={<XCircle size={20} />}>
+                        <StatusBanner tone="danger" title={stateText} icon={<XCircle size={20} />}>
                             {o.cancel?.reason && <p>{o.cancel.reason}</p>}
                             {a.refundedAmount > 0 ? (
                                 <p className="mt-1">
@@ -278,6 +284,9 @@ export function OrderTracking({ orderId, intent = null }: { orderId: string; int
                             <OrderTimeline mode={o.mode} steps={o.steps} closed={!open} />
                         </section>
                     )}
+
+                    {/* Lot 12d : « Signaler un problème » après le début de la préparation, puis suivi du signalement */}
+                    <IssueReport order={o} onSent={() => { setNotice('Signalement envoyé. L’équipe Event Village s’en occupe et vous répond dans la commande.'); void load(); }} />
 
                     {balanceOnline && (
                         <section ref={balanceRef} aria-labelledby="solde-titre" className="scroll-mt-24 space-y-3 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6" data-testid="solde">

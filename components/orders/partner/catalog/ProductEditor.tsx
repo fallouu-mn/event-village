@@ -26,6 +26,7 @@ import { ApiError, errorMessage, fetchJson, sendJson } from '@/components/partne
 import { useServerData } from '@/components/partner/useServerData';
 import { REGULATED_EXPLANATION, VENUE_KIND_LABELS, reviewReason } from '@/lib/orders/partner-ui';
 import { portionsLeft, type CatalogProduct, type CatalogResponse } from './catalog-client';
+import { AllergensPicker } from './AllergensPicker';
 import { CategoryPicker, type CategoryChoice } from './CategoryPicker';
 import { DailyPortions } from './DailyPortions';
 import { ProductBadges } from './ProductBadges';
@@ -44,12 +45,16 @@ interface FormState {
     daily: boolean;
     regulated: boolean;
     kind: string;
+    /** Lot 12d : allergènes et piment, enregistrés juste après le produit (PUT …/details). */
+    allergens: string[];
+    spiceLevel: number | null;
 }
 
 type Errors = Partial<Record<'venueId' | 'name' | 'price' | 'stock' | 'kind', string>>;
 
 const EMPTY: FormState = {
     venueId: '', categoryId: '', name: '', description: '', price: '', image: '', stockManaged: false, stock: '', daily: false, regulated: false, kind: '',
+    allergens: [], spiceLevel: null,
 };
 
 function fromProduct(p: CatalogProduct): FormState {
@@ -57,6 +62,7 @@ function fromProduct(p: CatalogProduct): FormState {
         venueId: p.venueId ?? '', categoryId: p.categoryId ?? '', name: p.name, description: p.description ?? '', price: String(p.price),
         image: p.images[0] ?? '', stockManaged: p.stockManaged, stock: p.stock === null ? '' : String(p.stock), daily: p.isDailySpecial,
         regulated: p.isRegulated, kind: p.regulatedKind ?? '',
+        allergens: Array.isArray(p.allergens) ? p.allergens : [], spiceLevel: p.spiceLevel ?? null,
     };
 }
 
@@ -114,6 +120,14 @@ export function ProductEditor({ productId, initialVenue }: { productId: string |
     const venue = venues.find((v) => v.id === (product?.venueId ?? form.venueId)) ?? null;
     const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+    /** Lot 12d : PUT /api/partner/products/[id]/details (refus du serveur levé tel quel). */
+    async function saveDetails(id: string): Promise<void> {
+        await fetchJson(`/api/partner/products/${encodeURIComponent(id)}/details`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ allergens: form.allergens, spiceLevel: form.spiceLevel }),
+        });
+    }
+
     async function submit(e: React.FormEvent) {
         e.preventDefault();
         const found = validate(form, creating);
@@ -136,11 +150,30 @@ export function ProductEditor({ productId, initialVenue }: { productId: string |
         try {
             if (creating) {
                 const r = await sendJson<{ product: { id: string; review_state?: string | null } }>('/api/partner/products', 'POST', { ...body, venue_id: form.venueId });
+                // Lot 12d : allergènes et piment, juste après la création (le produit existe déjà s'ils échouent)
+                if (form.allergens.length > 0 || form.spiceLevel !== null) {
+                    try {
+                        await saveDetails(r.product.id);
+                    } catch (err) {
+                        toast.error(errorMessage(err, 'Produit enregistré, mais pas ses allergènes : indiquez-les de nouveau.'));
+                    }
+                }
                 toast.success(r.product.review_state ? 'Produit enregistré : il passe en vérification par Event Village.' : 'Produit enregistré. Ajoutez ses suppléments si besoin.');
                 router.push(`/partner/products/${r.product.id}`);
                 return;
             }
             const r = await sendJson<{ product: { review_state?: string | null } }>(`/api/partner/products/${productId}`, 'PATCH', body);
+            // Lot 12d : allergènes et piment, juste après le produit (seulement s'ils ont changé)
+            const sameAllergens = product && [...form.allergens].sort().join(',') === [...(product.allergens ?? [])].sort().join(',');
+            if (!sameAllergens || form.spiceLevel !== (product?.spiceLevel ?? null)) {
+                try {
+                    await saveDetails(productId);
+                } catch (err) {
+                    setSaveError(`Produit enregistré, mais pas ses allergènes : ${errorMessage(err, 'réessayez.')}`);
+                    await loadProduct(false);
+                    return;
+                }
+            }
             toast.success(r.product.review_state ? 'Modifications enregistrées. Le produit est en vérification par Event Village.' : 'Modifications enregistrées.');
             await Promise.all([loadProduct(true), catalog.reload()]);
         } catch (err) {
@@ -297,6 +330,13 @@ export function ProductEditor({ productId, initialVenue }: { productId: string |
                             {form.daily && (!product || !product.isDailySpecial) && (
                                 <p className="text-sm text-muted-foreground">Enregistrez le produit, puis indiquez ses portions du jour ici.</p>
                             )}
+                        </Card>
+
+                        {/* Lot 12d : allergènes et piment */}
+                        <Card className="space-y-4 p-4 sm:p-5">
+                            <h2 className="text-lg font-semibold text-foreground-strong">Allergènes et piment</h2>
+                            <AllergensPicker allergens={form.allergens} spiceLevel={form.spiceLevel} disabled={readOnly}
+                                onChange={(n) => setForm((f) => ({ ...f, allergens: n.allergens, spiceLevel: n.spiceLevel }))} />
                         </Card>
 
                         <Card className="space-y-4 p-4 sm:p-5">

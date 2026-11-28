@@ -3,6 +3,8 @@
  * l'état, étapes, coordonnées seulement pendant la commande ouverte). Aucun montant n'est recalculé dans le navigateur :
  * chaque montant affiché est l'un de ceux-ci.
  */
+import type { OrderAbsence, OrderIssue } from '../../order-extras';
+
 export interface OrderLineOption { id?: string; name: string; price: number }
 
 export interface OrderLine {
@@ -50,6 +52,11 @@ export interface PartnerOrder {
     courier?: { first_name?: string | null } | null;
     cancel?: { origin?: string | null; reason?: string | null; refund_percent?: number | null } | null;
     created_at: string;
+    /** Lot 12d : appels du client comptés (livraison), « Client absent » possible, absence, dernier signalement. */
+    calls?: number | null;
+    can_report_absent?: boolean;
+    absence?: OrderAbsence | null;
+    issue?: OrderIssue | null;
 }
 
 export interface OrdersReply { success: boolean; orders: PartnerOrder[] }

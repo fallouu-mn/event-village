@@ -39,6 +39,10 @@ export interface MenuProduct {
     /** Plat du jour : portions prévues aujourd'hui (null pour un autre produit). */
     portionsTotal: number | null;
     options: MenuOption[];
+    /** Lot 12d : allergènes (codes de la liste fermée : GLUTEN, CRUSTACES, OEUFS…). */
+    allergens: string[];
+    /** Lot 12d : niveau de piment, 0 (pas pimenté) à 3 (très pimenté) ; null = non renseigné. */
+    spiceLevel: number | null;
 }
 
 export interface MenuZone {
@@ -80,6 +84,8 @@ export interface VenueMenu {
         asapAvailable: boolean;
         /** Fin de la fermeture exceptionnelle en cours (heure de Dakar, « AAAA-MM-JJTHH:MM »), ou null. */
         closedUntil: string | null;
+        /** Lot 12d : fin de la pause des commandes en cours (heure de Dakar, « AAAA-MM-JJTHH:MM »), ou null. */
+        pausedUntil: string | null;
         /** Heure de Dakar au moment de la lecture (« AAAA-MM-JJTHH:MM »). */
         now: string;
         windows: MenuWindow[];

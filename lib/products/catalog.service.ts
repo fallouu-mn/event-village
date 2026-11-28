@@ -53,6 +53,9 @@ export interface CatalogProduct {
     portionsToday: { portions: number; sold: number } | null;
     options: CatalogOption[];
     updatedAt: string;
+    /** Lot 12d : allergènes (codes de la liste fermée) et niveau de piment (0 à 3, null = non renseigné). */
+    allergens: string[];
+    spiceLevel: number | null;
 }
 export interface CatalogReply {
     partnerStatus: string | null;
@@ -104,6 +107,8 @@ function toProduct(p: Row, options: Row[], portions: Row | undefined): CatalogPr
         portionsToday: portions ? { portions: num(portions.portions), sold: num(portions.sold) } : null,
         options: options.map(toOption).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
         updatedAt: String(p.updated_at),
+        allergens: Array.isArray(p.allergens) ? (p.allergens as string[]) : [],
+        spiceLevel: optNum(p.spice_level),
     };
 }
 

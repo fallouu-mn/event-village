@@ -49,6 +49,12 @@ export interface OrderView {
     responseDueAt: string | null;
     cancel: { origin: string | null; reason: string | null } | null;
     canCancel: boolean;
+    /** Lot 12d : libellé de l'état servi par la route (« Client absent » pour une livraison close non retirée). */
+    stateLabel: string | null;
+    /** Lot 12d : « Signaler un problème » possible, dernier signalement, absence du client. */
+    canReport: boolean;
+    issue: { reason: string; status: string; createdAt: string | null; closeNote: string | null } | null;
+    absence: { phase: string; waitUntil: string | null } | null;
 }
 
 type Row = Record<string, unknown>;
@@ -115,6 +121,10 @@ export function readOrderView(body: unknown): OrderView | null {
         responseDueAt: str(o.response_due_at),
         cancel: cancel ? { origin: str(cancel.origin), reason: str(cancel.reason) } : null,
         canCancel: o.can_cancel === true,
+        stateLabel: str(o.stateLabel),
+        canReport: o.can_report === true,
+        issue: isRow(o.issue) ? { reason: str(o.issue.reason) ?? 'AUTRE', status: str(o.issue.status) ?? 'OUVERT', createdAt: str(o.issue.created_at), closeNote: str(o.issue.close_note) } : null,
+        absence: isRow(o.absence) ? { phase: str(o.absence.phase) ?? 'ATTENTE', waitUntil: str(o.absence.wait_until) } : null,
     };
 }
 

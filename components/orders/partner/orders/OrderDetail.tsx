@@ -32,6 +32,7 @@ import { formatDateTime, formatFcfa, formatTime } from '@/lib/format';
 import { ORDER_MODE_LABELS, PAYMENT_TYPE_LABELS } from '@/lib/orders/partner-ui';
 import { PARTNER_COURIERS_URL } from '@/lib/orders/partner-endpoints';
 import { HandoverCodeInput } from './HandoverCodeInput';
+import { DeliveryCallActions, OrderAlerts } from './DeliveryFollowUp';
 import { STATE_BADGE, scheduledLabel, shortOrderNumber } from './OrderCard';
 import { ResponseRing } from './ResponseRing';
 import { usePolledJson, useServerClock } from './usePolledJson';
@@ -162,6 +163,9 @@ export function OrderDetail({ orderId }: { orderId: string }) {
             {polled.error && (
                 <StatusBanner tone="warning" title="Mise à jour impossible pour le moment">{errorMessage(polled.error)}</StatusBanner>
             )}
+
+            {/* Lot 12d : absence du client et signalement */}
+            <OrderAlerts order={order} />
 
             {handedOver && order.state === 'REMISE' && (
                 <div role="status" className="flex items-center gap-4 rounded-2xl border border-success-border bg-success-soft p-5 text-success-text">
@@ -343,6 +347,9 @@ export function OrderDetail({ orderId }: { orderId: string }) {
                                     )}
                                 </div>
                             )}
+
+                            {/* Lot 12d : l'établissement qui livre lui-même appelle le client (appel compté), puis « Client absent » */}
+                            <DeliveryCallActions order={order} onChanged={polled.reload} />
 
                             {handoverReady && (
                                 <div className="space-y-4 border-t border-border pt-4 first:border-t-0 first:pt-0">

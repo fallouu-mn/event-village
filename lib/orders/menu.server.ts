@@ -46,6 +46,9 @@ function product(r: Row): MenuProduct {
         portionsLeft: r.portions_left === null || r.portions_left === undefined ? null : num(r.portions_left),
         portionsTotal: r.portions_total === null || r.portions_total === undefined ? null : num(r.portions_total),
         options: rows(r.options).map(option),
+        // Lot 12d : allergènes (codes en capitales de la liste fermée) et piment (0 à 3, ou non renseigné)
+        allergens: Array.isArray(r.allergens) ? r.allergens.filter((a): a is string => typeof a === 'string' && /^[A-Z_]{2,20}$/.test(a)) : [],
+        spiceLevel: typeof r.spice_level === 'number' && r.spice_level >= 0 && r.spice_level <= 3 ? r.spice_level : null,
     };
 }
 
@@ -75,6 +78,8 @@ export function venueMenuFrom(data: unknown): VenueMenu | null {
             serviceFeeRate: num(ordering.service_fee_rate),
             asapAvailable: ordering.asap_available === true,
             closedUntil: typeof ordering.closed_until === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(ordering.closed_until) ? ordering.closed_until : null,
+            // Lot 12d : fin de la pause des commandes (même format)
+            pausedUntil: typeof ordering.paused_until === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(ordering.paused_until) ? ordering.paused_until : null,
             now: String(ordering.now ?? ''),
             windows: (Array.isArray(ordering.windows) ? ordering.windows : [])
                 .filter((w): w is [string, string] => Array.isArray(w) && typeof w[0] === 'string' && typeof w[1] === 'string')

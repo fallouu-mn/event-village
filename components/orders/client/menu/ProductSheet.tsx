@@ -14,6 +14,7 @@ import { MAX_QUANTITY, NOTE_MAX } from '@/lib/orders/cart-client';
 import { blockedReason } from './ProductCard';
 import { portionsText } from './DailyBanner';
 import { ProductVisual } from './ProductVisual';
+import { DishFacts } from './DishFacts';
 
 /**
  * Lot 12b — fiche d'un plat (feuille du bas sur téléphone, fenêtre sur ordinateur) : photo, description, suppléments
@@ -79,6 +80,8 @@ export function ProductSheet({ product, onClose, onAdd }: {
                     {product.daily && <p className="text-sm font-semibold text-primary-text">{`Plat du jour · ${portionsText(product)}`}</p>}
                     {product.description && <p className="whitespace-pre-line text-base leading-relaxed text-foreground">{product.description}</p>}
                 </div>
+                {/* Lot 12d : allergènes et piment, servis par la carte */}
+                <DishFacts allergens={product.allergens} spiceLevel={product.spiceLevel} />
                 {blocked && (
                     <StatusBanner tone={blocked.tone === 'warning' ? 'warning' : 'neutral'} title={blocked.label}>
                         {product.regulated

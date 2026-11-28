@@ -10,7 +10,8 @@
  *    l'aperçu et expected_hash = son empreinte, contre-vérification T1 : la base n'annule que la liste montrée). Refus
  *    PREVIEW_CHANGED : la nouvelle liste est relue et réaffichée avant une nouvelle confirmation. Aucun montant calculé ici.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ClosureOrders } from '@/components/orders/partner/closures/ClosureOrders';
 import { ArrowLeft, CalendarOff, CalendarX2, CheckCircle2, Eye, Trash2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -84,6 +85,11 @@ export function ClosuresView({ venueId }: { venueId: string }) {
     const [removing, setRemoving] = useState<OwnVenue['closures'][number] | null>(null);
     const [removeBusy, setRemoveBusy] = useState(false);
     const [removeError, setRemoveError] = useState<string | null>(null);
+    // Lot 12d : ?fermeture=<id> (lien de l'avis « commandes pendant la fermeture ») met cette fermeture en vue
+    const [focusId, setFocusId] = useState<string | null>(null);
+    useEffect(() => {
+        setFocusId(new URLSearchParams(window.location.search).get('fermeture'));
+    }, []);
 
     if (loading && !data) {
         return (
@@ -268,6 +274,8 @@ export function ClosuresView({ venueId }: { venueId: string }) {
                                     <Button type="button" variant="ghost" size="sm" leftIcon={<Trash2 size={16} />} onClick={() => { setRemoveError(null); setRemoving(c); }} aria-label={`Retirer la fermeture : ${closurePeriodText(c.startsAt, c.endsAt)}`}>
                                         Retirer
                                     </Button>
+                                    {/* Lot 12d : commandes déjà prévues pendant cette fermeture (rien sans service des commandes) */}
+                                    <ClosureOrders closureId={c.id} closureReason={c.reason ?? null} focus={focusId === c.id} />
                                 </li>
                             ))}
                         </ul>

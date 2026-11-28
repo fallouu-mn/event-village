@@ -36,6 +36,7 @@ import { formatDateTime, formatFcfa, formatTime } from '@/lib/format';
 import { BOARD_COLUMNS, ORDER_MODE_LABELS, boardColumnOf, type BoardColumn } from '@/lib/orders/partner-ui';
 import { Badge } from '@/components/ui/Badge';
 import { DaySummary } from './DaySummary';
+import { OrdersPause } from './OrdersPause';
 import { OrderCard, STATE_BADGE, shortOrderNumber, type QuickAction } from './OrderCard';
 import { useOrderSound } from './useOrderSound';
 import { usePolledJson, useServerClock } from './usePolledJson';
@@ -368,6 +369,9 @@ export function OrdersBoard() {
                 </StatusBanner>
             )}
 
+            {/* Lot 12d : pause des commandes en un geste (15, 30 ou 60 minutes, fin automatique) */}
+            <OrdersPause readOnly={day.data?.partnerStatus === 'SUSPENDU'} />
+
             <DaySummary day={day.data?.day ?? null} loading={day.loading} readOnly={day.data?.partnerStatus === 'SUSPENDU'} onChanged={day.reload} />
 
             {open.error && open.data && (
@@ -446,6 +450,7 @@ export function OrdersBoard() {
                             Quitter le mode comptoir
                         </Button>
                     </div>
+                    <OrdersPause large readOnly={day.data?.partnerStatus === 'SUSPENDU'} />
                     {orders.length === 0 ? (
                         <EmptyState
                             illustrated

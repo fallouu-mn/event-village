@@ -21,6 +21,7 @@ import {
 import { CartPanel, type CartStep } from './CartPanel';
 import { CategoryTabs, type MenuSection } from './CategoryTabs';
 import { DailyBanner } from './DailyBanner';
+import { NoSpiceToggle, PauseBanner } from './DishFacts';
 import { MenuHeader } from './MenuHeader';
 import { ProductCard } from './ProductCard';
 import { ProductSheet } from './ProductSheet';
@@ -59,17 +60,21 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     const loginHref = `/login?redirect=${encodeURIComponent(pagePath)}`;
 
     const products = useMemo(() => new Map(menu.products.map((p) => [p.id, p])), [menu.products]);
-    const daily = useMemo(() => menu.products.filter((p) => p.daily), [menu.products]);
+    // Lot 12d : filtre « Sans piment » (niveau 0 renseigné par l'établissement), proposé s'il garde au moins un plat
+    const [noSpice, setNoSpice] = useState(false);
+    const noSpiceCount = useMemo(() => menu.products.filter((p) => p.spiceLevel === 0).length, [menu.products]);
+    const filtered = useMemo(() => (noSpice ? menu.products.filter((p) => p.spiceLevel === 0) : menu.products), [menu.products, noSpice]);
+    const daily = useMemo(() => filtered.filter((p) => p.daily), [filtered]);
     const sections = useMemo(() => {
         const list: Array<MenuSection & { items: MenuProduct[] }> = [];
         for (const c of menu.categories) {
-            const items = menu.products.filter((p) => !p.daily && p.categoryId === c.id);
+            const items = filtered.filter((p) => !p.daily && p.categoryId === c.id);
             if (items.length > 0) list.push({ id: `categorie-${c.id}`, name: c.name, items });
         }
-        const others = menu.products.filter((p) => !p.daily && (!p.categoryId || !menu.categories.some((c) => c.id === p.categoryId)));
+        const others = filtered.filter((p) => !p.daily && (!p.categoryId || !menu.categories.some((c) => c.id === p.categoryId)));
         if (others.length > 0) list.push({ id: 'categorie-autres', name: list.length > 0 ? 'Autres plats' : 'La carte', items: others });
         return list;
-    }, [menu.categories, menu.products]);
+    }, [menu.categories, filtered]);
     const choices = useMemo(() => timeChoices(menu), [menu]);
     const today = menu.ordering.now.slice(0, 10);
     const firstSlot = choices.slots[0] ?? null;
@@ -307,11 +312,18 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
                         </p>
                     </StatusBanner>
                 )}
+                {/* Lot 12d : pause des commandes de l'établissement (fin automatique) */}
+                <PauseBanner pausedUntil={menu.ordering.pausedUntil} />
                 {reorderNote && <StatusBanner tone="info" title="Commander à nouveau">{reorderNote}</StatusBanner>}
                 {dropped.length > 0 && (
                     <StatusBanner tone="warning" title="Certains plats ne sont plus disponibles">{droppedText(dropped)}</StatusBanner>
                 )}
                 <DailyBanner products={daily} onOpen={setOpen} />
+                {noSpiceCount > 0 && (
+                    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtres de la carte">
+                        <NoSpiceToggle active={noSpice} onChange={setNoSpice} count={noSpiceCount} />
+                    </div>
+                )}
                 <CategoryTabs sections={sections} />
                 {menu.products.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border bg-card px-4 py-10 text-center">
