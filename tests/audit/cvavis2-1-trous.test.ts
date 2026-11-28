@@ -114,6 +114,10 @@ describe('T2 — paiement non abouti annoncé avant que l’échec soit définit
 
         // 30 minutes après l'échec, SamirPay confirme le même paiement (succès tardif, lot 9 bis H1)
         providerSays(r.payment!, 'SUCCESS');
+        // Temps écoulé depuis la dernière relecture (la route ne relit SamirPay qu'une fois par STATUS_POLL_RECONCILE_SECONDS ;
+        // le cron des succès tardifs repasse après 15 minutes) : relecture remise une heure en arrière
+        const { error: rErr } = await service.from('payments').update({ last_reconciled_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', r.payment!.id);
+        assert.equal(rErr, null, rErr?.message);
         await pollStatus(buyer.accessToken, r.payment!.id);
         const late = await paymentById(r.payment!.id);
         // Débité : confirmé, ou à rembourser si les places sont parties entre-temps (dans les deux cas l'argent a été pris)
