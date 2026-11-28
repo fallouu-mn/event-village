@@ -108,10 +108,15 @@ describe('T2 — paiement non abouti annoncé avant que l’échec soit définit
         const sms = rows.find((x) => x.channel === 'SMS');
         assert.ok(sms, `avis mis en file : ${describeRows(rows)}`);
         const mark = smsMark(buyer.phoneE164);
-        // 11 minutes plus tard (heure de l'envoyeur, hors de la nuit) : l'avis part
-        await dispatchAt(addMinutes(new Date(Math.max(Date.parse(sms!.due_at), (await nowOutsideNight()).getTime())), 1), { ids: rows.map((x) => x.id) });
+        // Correctif T2 (lignes 111 à 114 changées avec l'accord du 28/11, signalé au rapport du lot et à « Corrections ») :
+        // l'échéance du SMS tombe au plus tôt 2 h après la création du paiement (fin du délai de grâce de SamirPay) ; l'envoyeur
+        // passe 11 minutes après l'échec. La ligne n'est pas encore due : l'envoyeur ne la lit pas, la règle de nuit n'y joue
+        // aucun rôle (même quand la suite tourne la nuit).
+        assert.ok(Date.parse(sms!.due_at) >= Date.parse(String(failed.created_at)) + 2 * 3_600_000 - 1_000,
+            `échéance du SMS au plus tôt 2 h après la création du paiement (${sms!.due_at}, paiement créé ${String(failed.created_at)})`);
+        await dispatchAt(addMinutes(new Date(), 11), { ids: rows.map((x) => x.id) });
         const [smsRow] = await outboxRows({ ids: [sms!.id] });
-        assert.equal(smsRow.status, 'SENT', `précondition : l'avis est parti à 10 minutes (${smsRow.status} ${smsRow.reason ?? ''})`);
+        assert.equal(smsRow.status, 'PENDING', `l'avis n'est pas parti à 10 minutes (${smsRow.status} ${smsRow.reason ?? ''})`);
         const sent = smsTo(buyer.phoneE164, mark).filter((m) => /paiement non abouti/.test(m.message));
 
         // 30 minutes après l'échec, SamirPay confirme le même paiement (succès tardif, lot 9 bis H1)
@@ -124,6 +129,10 @@ describe('T2 — paiement non abouti annoncé avant que l’échec soit définit
         const late = await paymentById(r.payment!.id);
         // Débité : confirmé, ou à rembourser si les places sont parties entre-temps (dans les deux cas l'argent a été pris)
         assert.ok(['SUCCESS', 'PARTIAL', 'REFUND_PENDING', 'REFUNDED'].includes(late.status), `succès tardif enregistré (${late.status})`);
+        // Correctif T2 (ajout convenu le 28/11) : après le succès tardif, toutes les lignes PAYMENT_NOT_COMPLETED sont annulées
+        const afterLate = await outboxRows({ type: 'PAYMENT_NOT_COMPLETED', userId: buyer.userId });
+        assert.ok(afterLate.length > 0 && afterLate.every((x) => x.status === 'CANCELLED'),
+            `avis annulés après le succès tardif : ${describeRows(afterLate)}`);
         assert.deepEqual(sent.map((m) => m.message), [],
             `TROU : SMS « Rien n'a été débité. Réessayez » envoyé pour un paiement finalement débité : ${JSON.stringify(sent.map((m) => m.message))}`);
     });
