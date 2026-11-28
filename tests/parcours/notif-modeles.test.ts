@@ -325,7 +325,8 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     // avis phase 2 (2a, modification signalée) : + SMS (B6)
     ess('ORDER_COURIER_INVITED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/courier/invitations/b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04'], 'Invitation à livrer'),
     // Lot 12c (migration 20261224000001, ajout signalé au rapport) : produit « à vérifier » (administration) et décision (partenaire)
-    ess('ADMIN_PRODUCT_REVIEW', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products?produit=a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Produit à vérifier', 'partners.validate'),
+    // avis phase 2 (2d, modification signalée) : + notification (B8)
+    ess('ADMIN_PRODUCT_REVIEW', [I, M, P], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products?produit=a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Produit à vérifier', 'partners.validate'),
     ess('PRODUCT_REVIEW_DECIDED', [I, P, M], 'PARTNER', 'A', 'ORDER', ['/partner/products/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], /^Produit (autorisé à la vente|vérifié|non vendu en ligne)$/),
     // Contre-vérification du lot 12c (migration 20261224000005, ajout signalé au rapport) : avis ajoutés (point 7) et revue groupée
     ess('ORDER_CODE_LOCKED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Code de remise bloqué'),
@@ -335,7 +336,8 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('ORDER_SCHEDULED_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Votre commande approche'),
     ess('PRODUCT_DECISION_SMS', [S], 'PARTNER', 'A', null, ['/partner/products/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], null),
     ess('ADMIN_ORDER_REFUND_BLOCKED', [S], 'ADMIN', 'B', null, ['/admin/finance#versements-a-reprendre'], null, 'refunds.manage'),
-    ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products'], 'Produits à vérifier', 'partners.validate'),
+    // avis phase 2 (2d, modification signalée) : + notification (B8)
+    ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M, P], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products'], 'Produits à vérifier', 'partners.validate'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
@@ -348,16 +350,21 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     // Lot 8, tâche 8.2 a (contrat 6.1, L32) : alerte du second paiement réussi d'un même panier.
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#remboursements-a-verser'], 'Paiement en double remboursé', 'refunds.manage'),
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Versement incertain', 'refunds.manage'),
-    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#du-aux-partenaires'], /^Retrait (refusé par l'opérateur|constaté non versé)$/, 'refunds.manage'), // finition 4 (E-33) : variante non versé (signalé)
-    ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'FINANCE_ALERT', ['/admin/finance#creances'], 'Créance sur un compte', 'payments.read'),
+    // avis phase 2 (2d, modification signalée) : + notification (B9)
+    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M, P], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#du-aux-partenaires'], /^Retrait (refusé par l'opérateur|constaté non versé)$/, 'refunds.manage'), // finition 4 (E-33) : variante non versé (signalé)
+    // avis phase 2 (2d, modification signalée) : + notification (B9)
+    ess('ADMIN_FINANCE_DEBT', [I, M, P], 'ADMIN', 'B', 'FINANCE_ALERT', ['/admin/finance#creances'], 'Créance sur un compte', 'payments.read'),
     // avis phase 2 (2a, modification signalée) : + notification (B11)
     ess('ADMIN_NOTIFICATION_FAILED', [I, M, P], 'ADMIN', 'B', 'NOTIFICATION_ALERT', ['/admin/notifications/:outbox'], 'Envoi en échec', 'notifications.read'), // G.49
     // avis phase 2 (2a, modification signalée) : + notification (B11)
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M, P], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Volume de SMS indispensables élevé', 'notifications.read'), // 11.2 M6
-    ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint : codes bloqués', 'notifications.read'), // G.49 ; finition 4 (E-05) : titre qui dit ce qui s'arrête (signalé)
-    ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'SMS_NON_OTP_SHARE_REACHED', ['/admin/notifications'], 'Quota de SMS hors codes atteint', 'notifications.read'), // G.49 ; finition 4 (E-05) (signalé)
+    // avis phase 2 (2d, modification signalée) : + notification seulement (B10, D4)
+    ess('ADMIN_SMS_CAP_GLOBAL', [I, M, P], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint : codes bloqués', 'notifications.read'), // G.49 ; finition 4 (E-05) : titre qui dit ce qui s'arrête (signalé)
+    // avis phase 2 (2d, modification signalée) : + notification seulement (B10, D4)
+    ess('ADMIN_SMS_CAP_NON_OTP', [I, M, P], 'ADMIN', 'B', 'SMS_NON_OTP_SHARE_REACHED', ['/admin/notifications'], 'Quota de SMS hors codes atteint', 'notifications.read'), // G.49 ; finition 4 (E-05) (signalé)
     // Lot 9 quater (A8 : AUD-05) : type ajouté (modification signalée au rapport)
-    ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Codes d’inscription : part du jour atteinte', 'notifications.read'),
+    // avis phase 2 (2d, modification signalée) : + notification seulement (B10, D4)
+    ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M, P], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Codes d’inscription : part du jour atteinte', 'notifications.read'),
     // Lot 7, tâche 7.0 a (contrat 4.1, M2.1, D15) : alerte à 80 % du plafond optionnel et prévision de la veille.
     // avis phase 2 (2a, modification signalée) : + notification (B11)
     ess('ADMIN_SMS_OPTIONAL_80', [I, M, P], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'SMS optionnels : 80 % du plafond', 'notifications.read'),
@@ -485,7 +492,13 @@ function variants(type: string, base: Data): Data[] {
         dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99 }, ['company']),
         // Contre-vérification du lot 10b (ajout signalé) : salles validées modifiées, seules puis avec tout le reste
         dataFrom(base, { partner_count: 0, event_count: 0, venue_count: 0, hall_count: 0, hall_changed_count: 99 }, ['company']),
-        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99 }, ['company'])];
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99 }, ['company']),
+        // Lot « Avis », phase 2 (2d, ajout signalé) : produits à vérifier, seuls puis avec tout le reste
+        dataFrom(base, { partner_count: 0, event_count: 0, product_count: 99 }, ['company']),
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99, product_count: 99 }, ['company'])];
+    // Lot « Avis », phase 2 (2d, ajout signalé) : argent à vérifier, quatre parties au pire cas, puis une seule
+    if (type === 'ADMIN_MONEY_SMS') return [dataFrom(base, { resume_count: 99, uncertain_count: 99, duplicate_count: 99, debt_count: 99 }),
+        dataFrom(base, { resume_count: 999, uncertain_count: 999, duplicate_count: 999, debt_count: 999 }), dataFrom(base, { resume_count: 99, uncertain_count: 0, duplicate_count: 0, debt_count: 0 })];
     return type === 'ADMIN_EVENT_CHANGED' ? adminChangeVariants(base) : [base]; // lot 9 ter (B.7 T-B3) : parties PRICE et CHANNELS
 }
 
@@ -1101,6 +1114,15 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : paiement de 15 000 F CFA confirmé. Merci. ${U}/orders`],
             ['ORDER_COURIER_INVITED', {partner_name: 'Chez Fatou'}, [],
                 `Event Village : Chez Fatou vous invite à livrer ses commandes. Répondez : ${U}/courier/invitations`],
+            // 2d : SMS regroupés des administrateurs (B8, B9)
+            ['ADMIN_MONEY_SMS', {}, [],
+                `Event Village : argent à vérifier : 2 versements à reprendre, 1 incertain, 1 double paiement, 1 créance. ${U}/admin/finance`],
+            ['ADMIN_MONEY_SMS', {resume_count: 0, uncertain_count: 3, duplicate_count: 0, debt_count: 0}, [],
+                `Event Village : argent à vérifier : 3 incertains. ${U}/admin/finance`],
+            ['ADMIN_REVIEW_SMS', {partner_count: 0, event_count: 0, product_count: 3}, ['company'],
+                `Event Village : 3 produit(s) attendent votre validation : ${U}/admin/dashboard`],
+            ['ADMIN_REVIEW_SMS', {partner_count: 2, event_count: 0, product_count: 1}, ['company'],
+                `Event Village : 2 demande(s) de partenaire et 1 produit(s) attendent votre validation : ${U}/admin/dashboard`],
             ['TRANSFER_EXPIRED', {}, [],
                 `Event Village : votre billet Gala de la Teranga n'a pas été accepté à temps : il vous revient. ${U}/tickets`],
             ['TRANSFER_CLAIMED_SENDER', {}, [],
@@ -1596,6 +1618,8 @@ function avisPhase2Expected(): ExpectedType[] {
         ess('SHIFT_DISCREPANCY_VALIDATED', [I, P], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Caisse validée'),
         ess('CONTROLLER_POST_CHANGED', [I, P], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Votre poste a changé'),
         ess('ACCOUNT_WELCOME', [I, P], 'CLIENT', 'B', 'WELCOME', ['/'], 'Bienvenue sur Event Village'),
+        // 2d (migration 20261230000004) : SMS regroupé « argent à vérifier » des administrateurs (SMS seul, comme ADMIN_REVIEW_SMS)
+        ess('ADMIN_MONEY_SMS', [S], 'ADMIN', 'B', null, ['/admin/finance'], null),
     ];
 }
 

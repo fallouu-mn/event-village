@@ -546,6 +546,17 @@ describe('I. avis ajoutés (point 7)', () => {
         const box = (await adminBox(money.userId, 'ADMIN_ORDER_REFUND_BLOCKED', since)).filter((b) => (b.template_data as Row).cashout_id === cashouts![0].id);
         assert.deepEqual(box.map((b) => [String(b.channel), (b.template_data as Row).cashout_status, (b.template_data as Row).order_number]),
             [['SMS', 'INCERTAIN', (await order(id)).order_number]]);
+        // Lot « Avis », phase 2 (2d, B9 ; ajout signalé au rapport) : ce SMS est fondu dans le SMS regroupé « argent à vérifier »
+        // (ligne gardée, sautée) ; l'alerte « versement incertain » de la cloche y est comptée : un seul SMS pour l'administrateur
+        const { data: trace, error: tErr } = await service.from('notification_outbox').select('status, reason')
+            .eq('recipient_user_id', money.userId).eq('type', 'ADMIN_ORDER_REFUND_BLOCKED').eq('template_data->>cashout_id', String(cashouts![0].id));
+        assert.equal(tErr, null, tErr?.message);
+        assert.deepEqual((trace ?? []).map((b) => [String(b.status), String(b.reason)]), [['SKIPPED', 'GROUPED_ADMIN_SMS']]);
+        const { data: grouped, error: gErr } = await service.from('notification_outbox').select('status, template_data')
+            .eq('recipient_user_id', money.userId).eq('type', 'ADMIN_MONEY_SMS').eq('status', 'PENDING');
+        assert.equal(gErr, null, gErr?.message);
+        assert.equal((grouped ?? []).length, 1, JSON.stringify(grouped));
+        assert.ok(Number(((grouped ?? [])[0]?.template_data as Row | undefined)?.uncertain_count) >= 1, JSON.stringify(grouped));
     });
 
     test('règle de nuit : code, rappels, préparation, commande prête, rappel client tout de suite ; décision, remboursement, revue groupée reportés', async () => {

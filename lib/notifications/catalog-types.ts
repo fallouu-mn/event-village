@@ -331,7 +331,7 @@ export interface TemplateData {
      * complétés, `event_count` = événements soumis, `company` = société de l'unique candidature nouvelle (absente dès qu'il y
      * a plus d'un élément), `refs` = références déjà comptées.
      */
-    ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; venue_count?: number; company?: string | null; refs?: string[] };
+    ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; venue_count?: number; company?: string | null; refs?: string[]; product_count?: number };
     /** Lot 9 quinquies (A1 : AUTH-01) : 10e échec de mot de passe sur le compte, une fois par jour (`day` de Dakar). */
     ACCOUNT_LOGIN_FAILURES: { day?: string };
     /** Lot 9 quinquies (C2 : AUTH-09) : nouvelle adresse email vérifiée sur le compte (aucune donnée : jamais l'adresse dans un SMS). */
@@ -373,6 +373,9 @@ export interface TemplateData {
     CONTROLLER_POST_CHANGED: EventData & { assignment_id: string; gate_name?: string | null; can_accept_cash: boolean; changes: Array<'GATE' | 'CASH' | string> };
     /** A10 : bienvenue après l'inscription, aucune donnée. */
     ACCOUNT_WELCOME: Record<string, never>;
+    // ── Lot « Avis », phase 2 (2d, migration 20261230000004) ──
+    /** B9 : SMS regroupé « argent à vérifier » (compteurs par nature, refs = alertes déjà comptées). */
+    ADMIN_MONEY_SMS: { resume_count?: number; uncertain_count?: number; duplicate_count?: number; debt_count?: number; refs?: string[] };
 }
 
 export type NotificationType = keyof TemplateData;

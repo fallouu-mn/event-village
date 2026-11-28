@@ -66,6 +66,9 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     COUNTER_RECEIPT_CAP: 'Limite de reçus de la caisse atteinte',
     NO_VALID_TICKET: 'Plus de billet valable',
     TITLE_ONLY: 'Seul le titre a changé',
+    // Lot « Avis », phase 2 : plafond de 2 SMS d'avis par heure (libellé qui manquait) ; SMS fondu dans un SMS regroupé (2d)
+    LAST_HOUR_CAP: 'Déjà 2 SMS sur cet événement dans l’heure',
+    GROUPED_ADMIN_SMS: 'Compté dans le SMS regroupé « argent à vérifier »',
     COVERED_BY_INVITATION: "Déjà prévenu par l'invitation",
     SETTING_MISSING: 'Réglage des notifications manquant',
     MIGRATED_NO_PHONE: 'Reprise sans numéro de téléphone',
@@ -236,6 +239,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     SHIFT_DISCREPANCY_VALIDATED: 'Caisse validée',
     CONTROLLER_POST_CHANGED: 'Poste du contrôleur modifié',
     ACCOUNT_WELCOME: 'Bienvenue après l’inscription',
+    // Lot « Avis », phase 2 (2d)
+    ADMIN_MONEY_SMS: 'SMS : argent à vérifier',
     ADMIN_PARTNER_REGISTERED: 'Nouvelle candidature partenaire',
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
     ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',

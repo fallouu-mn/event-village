@@ -25,6 +25,7 @@ const FILES = [
     '20261230000001_avis_titulaires_table.sql',
     '20261230000002_avis_nouveaux_simples.sql',
     '20261230000003_avis_canaux.sql',
+    '20261230000004_avis_admins.sql',
 ];
 
 /** Recopies du lot : fonction → dernière définition de main (fichier, première et dernière ligne) et migration du lot. */
@@ -34,6 +35,10 @@ const RECOPIES: Record<string, { from: string; lines: [number, number]; in: stri
     'public.notif_event_status_changed': { from: '20261109000009_lot9bis_messages.sql', lines: [106, 374], in: FILES[0] },
     'public.notification_outbox_claim': { from: '20261125000006_f4_evenement_proche.sql', lines: [46, 457], in: FILES[0] },
     'public.account_phone_finalize': { from: '20261120000006_f3d_cv_numero_profil.sql', lines: [8, 135], in: FILES[2] },
+    'public.notif_admin_review_sms': { from: '20261126000004_l10b_cv_correctifs.sql', lines: [317, 421], in: FILES[3] },
+    'private.order_product_review_notify': { from: '20261224000001_l12c_verification.sql', lines: [441, 467], in: FILES[3] },
+    'private.order_review_batch_done': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [54, 75], in: FILES[3] },
+    'private.order_refund_blocked_notify': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [469, 503], in: FILES[3] },
 };
 
 /** Fonctions nouvelles du lot. */
@@ -42,6 +47,8 @@ const NEW_FUNCTIONS = [
     // 2c : déclencheurs nouveaux (aucune recopie)
     'private.notif_withdrawal_requested', 'private.notif_withdrawal_ack_paid', 'private.notif_partner_resubmitted', 'private.notif_shift_validated',
     'private.notif_controller_post_changed',
+    // 2d : SMS regroupé « argent à vérifier » et son déclencheur sur la boîte d'envoi
+    'private.notif_admin_money_sms', 'private.notif_admin_money_on_alert',
 ];
 
 /** Jamais redéfinies par le lot : livreurs (12d), recopies suivies par les audits (accord requis). */
@@ -121,7 +128,7 @@ describe('Lot « Avis » phase 2 — migrations', () => {
 
     test('droits : publiques du lot au rôle de service seulement ; private à aucun rôle de l’API', async () => {
         const pub = [...NEW_FUNCTIONS, ...Object.keys(RECOPIES)].filter((f) => f.startsWith('public.')).map((f) => f.slice(7));
-        const priv = NEW_FUNCTIONS.filter((f) => f.startsWith('private.')).map((f) => f.slice(8));
+        const priv = [...NEW_FUNCTIONS, ...Object.keys(RECOPIES)].filter((f) => f.startsWith('private.')).map((f) => f.slice(8));
         await inRolledBackTransaction(async (c) => {
             const { rows } = await c.query<{ nsp: string; proname: string; anon: boolean; auth: boolean; svc: boolean; pub: boolean; trigger: boolean }>(
                 `SELECT n.nspname AS nsp, p.proname, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

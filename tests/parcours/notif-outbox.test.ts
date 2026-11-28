@@ -190,7 +190,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     // avis phase 2 (2a, modification signalée) : + SMS (B6)
     ess('ORDER_COURIER_INVITED', [I, P, M, S], 'CLIENT', 'B'),
     // Lot 12c (migration 20261224000001, ajout signalé au rapport) : vérification des produits
-    ess('ADMIN_PRODUCT_REVIEW', [I, M], 'ADMIN', 'B', 'partners.validate'),
+    // avis phase 2 (2d, modification signalée) : + notification (B8)
+    ess('ADMIN_PRODUCT_REVIEW', [I, M, P], 'ADMIN', 'B', 'partners.validate'),
     ess('PRODUCT_REVIEW_DECIDED', [I, P, M], 'PARTNER', 'A'),
     // Contre-vérification du lot 12c (migration 20261224000005, ajout signalé au rapport) : avis ajoutés (point 7) et revue groupée
     ess('ORDER_CODE_LOCKED', [I, P, M, S], 'CLIENT', 'B'),
@@ -200,7 +201,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ORDER_SCHEDULED_REMINDER', [I, P, M, S], 'CLIENT', 'B'),
     ess('PRODUCT_DECISION_SMS', [S], 'PARTNER', 'A'),
     ess('ADMIN_ORDER_REFUND_BLOCKED', [S], 'ADMIN', 'B', 'refunds.manage'),
-    ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M], 'ADMIN', 'B', 'partners.validate'),
+    // avis phase 2 (2d, modification signalée) : + notification (B8)
+    ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M, P], 'ADMIN', 'B', 'partners.validate'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
@@ -218,14 +220,18 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'refunds.manage'), // lot 8, tâche 8.2 a (L32, migration 20261106000003)
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
-    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'refunds.manage'),
-    ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'payments.read'),
+    // avis phase 2 (2d, modification signalée) : + notification (B9)
+    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M, P], 'ADMIN', 'B', 'refunds.manage'),
+    // avis phase 2 (2d, modification signalée) : + notification (B9)
+    ess('ADMIN_FINANCE_DEBT', [I, M, P], 'ADMIN', 'B', 'payments.read'),
     // avis phase 2 (2a, modification signalée) : + notification (B11)
     ess('ADMIN_NOTIFICATION_FAILED', [I, M, P], 'ADMIN', 'B', 'notifications.read'), // G.49
     // avis phase 2 (2a, modification signalée) : + notification (B11)
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M, P], 'ADMIN', 'B', 'notifications.read'),
-    ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
-    ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
+    // avis phase 2 (2d, modification signalée) : + notification seulement (B10, D4)
+    ess('ADMIN_SMS_CAP_GLOBAL', [I, M, P], 'ADMIN', 'B', 'notifications.read'), // G.49
+    // avis phase 2 (2d, modification signalée) : + notification seulement (B10, D4)
+    ess('ADMIN_SMS_CAP_NON_OTP', [I, M, P], 'ADMIN', 'B', 'notifications.read'), // G.49
     // Lot 7, tâche 7.0 a (contrat M2.1, D15) : alerte à 80 % du plafond optionnel, prévision de la veille.
     // avis phase 2 (2a, modification signalée) : + notification (B11)
     ess('ADMIN_SMS_OPTIONAL_80', [I, M, P], 'ADMIN', 'B', 'notifications.read'),
@@ -275,7 +281,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_EVENT_WITHDRAWN', [I, M, P], 'ADMIN', 'B', 'events.read'),
     ess('SCAN_REFUSALS_ALERT', [I, P, M, S], 'PARTNER', 'B'),
     // Lot 9 quater (A8 : AUD-05 ; A9 : AUD-34) : deux types nouveaux (migrations 20261111000002 et …04), modification signalée
-    ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'notifications.read'),
+    // avis phase 2 (2d, modification signalée) : + notification seulement (B10, D4)
+    ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M, P], 'ADMIN', 'B', 'notifications.read'),
     ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M, P], 'ANY', 'B'),
     // Lot 9 quinquies (D1, A1, A2, A3, C2) : types nouveaux (migrations 20261112000001, …02, …06, …08), modification signalée
     ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B'),
@@ -311,6 +318,8 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('SHIFT_DISCREPANCY_VALIDATED', [I, P], 'CONTROLLER', 'B'),
     ess('CONTROLLER_POST_CHANGED', [I, P], 'CONTROLLER', 'B'),
     ess('ACCOUNT_WELCOME', [I, P], 'CLIENT', 'B'),
+    // Lot « Avis », phase 2 (2d, migration 20261230000004) : SMS regroupé « argent à vérifier » (ajout signalé)
+    ess('ADMIN_MONEY_SMS', [S], 'ADMIN', 'B'),
     sync('OTP_ADMIN_PHONE'),
     sync('ORDER_HANDOVER_CODE'), // lot 12a (ajout signalé)
 ];

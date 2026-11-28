@@ -2158,7 +2158,7 @@ const CATALOG = {
     // Lot 12c : produit « à vérifier » (un mot de la liste dans son nom, sa description ou un supplément) : administrateurs
     // qui ont partners.validate, cloche et email ; décision envoyée à la partenaire (cloche, notification du téléphone, email)
     ADMIN_PRODUCT_REVIEW: define('ADMIN_PRODUCT_REVIEW', {
-        label: 'Produit à vérifier', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
+        label: 'Produit à vérifier', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
         link: (d) => `/admin/products?produit=${ident(d, 'product_id')}`,
         inApp: (d) => {
             const words = Array.isArray(field(d, 'words')) ? (field(d, 'words') as unknown[]).filter((w): w is string => typeof w === 'string') : [];
@@ -2226,7 +2226,7 @@ const CATALOG = {
     // Contre-vérification du lot 12c (T3) : revue groupée des produits déjà enregistrés (liste des mots changée, catégorie
     // renommée, mise à jour) : un seul avis aux administrateurs partners.validate
     ADMIN_PRODUCTS_REVIEW_BATCH: define('ADMIN_PRODUCTS_REVIEW_BATCH', {
-        label: 'Produits déjà en vente à vérifier', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
+        label: 'Produits déjà en vente à vérifier', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
         link: () => '/admin/products',
         inApp: (d) => {
             const n = count(d, 'count');
@@ -2335,7 +2335,7 @@ const CATALOG = {
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_WITHDRAWAL_REJECTED: define('ADMIN_WITHDRAWAL_REJECTED', {
-        label: 'Retrait refusé par l’opérateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
+        label: 'Retrait refusé par l’opérateur', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
         link: () => '/admin/finance#du-aux-partenaires',
         // Finition 4 (point 5, E-33) : variante « constaté non versé » (not_paid), jamais « refusé par l'opérateur »
         inApp: (d) => (field(d, 'not_paid') === true
@@ -2344,7 +2344,7 @@ const CATALOG = {
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_FINANCE_DEBT: define('ADMIN_FINANCE_DEBT', {
-        label: 'Créance sur un compte', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'payments.read', inAppType: 'FINANCE_ALERT',
+        label: 'Créance sur un compte', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'payments.read', inAppType: 'FINANCE_ALERT',
         link: () => '/admin/finance#creances',
         inApp: (d) => {
             const kind = optText(d, 'account_kind');
@@ -2383,7 +2383,7 @@ const CATALOG = {
         sample: { day: '2026-11-02', count: 2_150, threshold: 2_000 },
     }),
     ADMIN_SMS_CAP_GLOBAL: define('ADMIN_SMS_CAP_GLOBAL', {
-        label: 'Plafond de SMS atteint', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
+        label: 'Plafond de SMS atteint', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Plafond de SMS atteint : codes bloqués',
@@ -2393,7 +2393,7 @@ const CATALOG = {
         sample: { day: '2026-11-02', cap: 1_000 },
     }),
     ADMIN_SMS_CAP_NON_OTP: define('ADMIN_SMS_CAP_NON_OTP', {
-        label: 'Quota de SMS hors codes atteint', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_NON_OTP_SHARE_REACHED',
+        label: 'Quota de SMS hors codes atteint', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_NON_OTP_SHARE_REACHED',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Quota de SMS hors codes atteint',
@@ -2403,7 +2403,7 @@ const CATALOG = {
     }),
     // Lot 9 quater (A8 : AUD-05) : part quotidienne des codes vers un numéro sans compte (inscriptions) atteinte.
     ADMIN_SMS_CAP_NEW_NUMBERS: define('ADMIN_SMS_CAP_NEW_NUMBERS', {
-        label: 'Codes d’inscription : part du jour atteinte', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
+        label: 'Codes d’inscription : part du jour atteinte', channels: ['IN_APP', 'EMAIL', 'PUSH'] /* avis phase 2 (2d) : + notification */, audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Codes d’inscription : part du jour atteinte',
@@ -2904,6 +2904,15 @@ const CATALOG = {
         sms: (d, ctx) => adminReviewSms(d, ctx),
         sample: { partner_count: 1, event_count: 0, company: 'Association culturelle Sabar Events Dakar Plateau' },
     }),
+    // Lot « Avis », phase 2 (2d, B9 ; migration 20261230000004) : un SMS regroupé par heure et par administrateur pour l'argent
+    // à vérifier, compté depuis les alertes de la cloche (déclencheur sur la boîte d'envoi) ; reporté la nuit.
+    ADMIN_MONEY_SMS: define('ADMIN_MONEY_SMS', {
+        label: 'SMS aux administrateurs : argent à vérifier', channels: ['SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: null,
+        night: 'DEFER',
+        link: () => '/admin/finance',
+        sms: (d, ctx) => adminMoneySms(d, ctx),
+        sample: { resume_count: 2, uncertain_count: 1, duplicate_count: 1, debt_count: 1 },
+    }),
     // Lot 9 quinquies (A1 : AUTH-01) : 10e échec de mot de passe en 15 minutes, une fois par jour. SMS de la consigne
     // ramené à 160 septets avec l'URL de 27 caractères : « plusieurs connexions ont échoué » (au lieu de « plusieurs
     // essais de connexion ont échoué », 169 septets, deux segments).
@@ -3183,9 +3192,11 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     // salles validées modifiées, à revoir
     const halls = optNum(d, 'hall_count') ?? 0;
     const changed = optNum(d, 'hall_changed_count') ?? 0;
+    // Avis phase 2 (2d, B8) : produits « à vérifier » (absent des SMS mis en file avant le lot : 0)
+    const products = optNum(d, 'product_count') ?? 0;
     const company = optText(d, 'company');
     const link = appLink(ctx, '/admin/dashboard');
-    if (partners === 1 && events === 0 && venues === 0 && halls === 0 && changed === 0 && company) {
+    if (partners === 1 && events === 0 && venues === 0 && halls === 0 && changed === 0 && products === 0 && company) {
         return `${SMS_PREFIX}nouvelle demande de partenaire "${smsVar(company, 40)}". Vérifiez son dossier : ${link}`;
     }
     const parts: string[] = [];
@@ -3193,13 +3204,35 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     if (events > 0) parts.push(`${events} événement(s)`);
     if (venues > 0) parts.push(`${venues} établissement(s)`);
     if (halls > 0) parts.push(`${halls} salle(s)`);
+    if (products > 0) parts.push(`${products} produit(s)`);
     if (parts.length === 0 && changed > 0) return `${SMS_PREFIX}${changed} salle(s) validée(s) modifiée(s) à vérifier : ${link}`;
     if (changed > 0) parts.push(`${changed} salle(s) modifiée(s)`);
-    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count, hall_count et hall_changed_count à zéro : rien à valider');
+    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count, hall_count, hall_changed_count et product_count à zéro : rien à valider');
     const detailed = `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
     // Lot 10b : quatre rubriques peuvent dépasser un segment ; alors le total seul
     if (smsSegments(detailed).segments <= 1) return detailed;
-    return `${SMS_PREFIX}${partners + events + venues + halls + changed} demandes attendent votre validation : ${link}`;
+    return `${SMS_PREFIX}${partners + events + venues + halls + changed + products} demandes attendent votre validation : ${link}`;
+}
+
+/**
+ * Lot « Avis », phase 2 (2d, B9) : SMS regroupé « argent à vérifier » des administrateurs (un par heure au plus), parties à zéro
+ * retirées ; si les quatre parties ne tiennent pas en un SMS, le total seul.
+ */
+export function adminMoneySms(d: object, ctx: RenderContext): string {
+    const resume = optNum(d, 'resume_count') ?? 0;
+    const uncertain = optNum(d, 'uncertain_count') ?? 0;
+    const duplicate = optNum(d, 'duplicate_count') ?? 0;
+    const debt = optNum(d, 'debt_count') ?? 0;
+    const parts: string[] = [];
+    if (resume > 0) parts.push(plural(resume, 'versement à reprendre', 'versements à reprendre'));
+    if (uncertain > 0) parts.push(plural(uncertain, 'incertain', 'incertains'));
+    if (duplicate > 0) parts.push(plural(duplicate, 'double paiement', 'doubles paiements'));
+    if (debt > 0) parts.push(plural(debt, 'créance', 'créances'));
+    if (parts.length === 0) throw new TemplateDataError('resume_count', 'uncertain_count, duplicate_count et debt_count à zéro : rien à vérifier');
+    const link = appLink(ctx, '/admin/finance');
+    const detailed = `${SMS_PREFIX}argent à vérifier : ${parts.join(', ')}. ${link}`;
+    if (smsSegments(detailed).segments <= 1) return detailed;
+    return `${SMS_PREFIX}argent à vérifier : ${resume + uncertain + duplicate + debt} éléments. ${link}`;
 }
 
 /** Lot 11a : nom de l'établissement entre guillemets, sinon « votre établissement ». */
