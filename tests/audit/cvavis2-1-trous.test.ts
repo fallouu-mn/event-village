@@ -21,6 +21,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { assertNotificationInvariants } from '../helpers/notification-invariants';
+import { assertFinanceInvariants } from '../helpers/finance-invariants';
 import { buyConfirmed, createPartnerEvent, newPartner, superadminId, type TestPartner } from '../parcours/finance-helpers';
 import { cart, checkout, createSaleEvent, newBuyer, paymentById, pollStatus, providerSays, service } from '../parcours/paiement-helpers';
 import { assertRpcOk, rpcTransition, shiftEventDates } from '../parcours/cycle-helpers';
@@ -38,6 +39,7 @@ before(async () => {
 });
 
 after(async () => {
+    await assertFinanceInvariants('cvavis2-1-trous');
     await assertNotificationInvariants('cvavis2-1-trous');
 });
 
@@ -171,20 +173,34 @@ describe('T3 — commissions annoncées disponibles alors qu’elles ne sont pas
     test('b. commission d’un événement suspendu (gelée, fin_frozen_amount) : jamais annoncée « disponible »', async () => {
         const { sponsor, ev, commission: c } = await sponsorWithCommission('cvavis2-t3b');
         let suspended = false;
+        // Écritures du grand livre du parrain (même date de disponibilité que la commission, comme à la création) : remises à la fin
+        const { data: ledger, error: lErr } = await service.from('finance_ledger').select('id, available_at')
+            .eq('owner_id', sponsor.userId).eq('account_kind', 'PARRAINAGE');
+        assert.equal(lErr, null, lErr?.message);
+        assert.ok((ledger ?? []).length > 0, 'écriture de la commission au grand livre');
         try {
             const { error } = await service.from('referral_commissions').update({ available_at: inWindow() }).eq('id', c.id);
             assert.equal(error, null, error?.message);
+            for (const l of ledger ?? []) {
+                const { error: e } = await service.from('finance_ledger').update({ available_at: inWindow() }).eq('id', l.id);
+                assert.equal(e, null, e?.message);
+            }
             assertRpcOk(await rpcTransition(ev.eventId, admin, 'SUSPENDU', 'Contre-vérification T3b'), 'suspension');
             suspended = true;
             const { data: frozen, error: fErr } = await service.rpc('fin_frozen_amount', { p_owner: sponsor.userId, p_kind: 'PARRAINAGE', p_at: now().toISOString() });
             assert.equal(fErr, null, fErr?.message);
             console.log(`[CVAVIS2-T3b] fonds de parrainage gelés à l'heure du contrôle : ${frozen}`);
+            assert.ok(Number(frozen) > 0, `précondition : commission gelée par la suspension (${frozen})`);
             const { data, error: dErr } = await service.rpc('notification_daily_checks', { p: { now: now().toISOString() } });
             assert.equal(dErr, null, dErr?.message);
             assert.equal((data as { ok?: boolean }).ok, true, JSON.stringify(data));
         } finally {
             const { error } = await service.from('referral_commissions').update({ available_at: c.available_at }).eq('id', c.id);
             assert.equal(error, null, `commission remise : ${error?.message}`);
+            for (const l of ledger ?? []) {
+                const { error: e } = await service.from('finance_ledger').update({ available_at: l.available_at }).eq('id', l.id);
+                assert.equal(e, null, `grand livre remis : ${e?.message}`);
+            }
             if (suspended) assertRpcOk(await rpcTransition(ev.eventId, admin, 'PUBLIE'), 'reprise (remise en état)');
         }
         const rows = await outboxRows({ type: 'REFERRAL_AVAILABLE', userId: sponsor.userId });
