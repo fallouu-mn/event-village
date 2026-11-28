@@ -353,9 +353,9 @@ for (const theme of THEMES) {
                 await pp.setViewportSize({ width: w.width, height: w.height });
                 await pp.goto(`/orders/${d.orders.prep.id}`, { waitUntil: 'load' });
                 await pp.getByRole('button', { name: 'Signaler un problème' }).first().click({ timeout: 30_000 });
-                const dialog = pp.getByRole('dialog', { name: 'Signaler un problème' });
+                const dialog = pp.getByRole('alertdialog', { name: 'Signaler un problème' });
                 await expect(dialog).toBeVisible({ timeout: 10_000 });
-                await expect(dialog.getByRole('group', { name: 'Motif du signalement' })).toBeVisible();
+                await expect(dialog.getByRole('radiogroup', { name: 'Motif du signalement' })).toBeVisible();
                 await settle(pp);
                 await checkLayout(pp, w.width, w.phone, 'signaler un problème');
                 await shot(pp, 'client-signalement', w.width, theme.key, false);

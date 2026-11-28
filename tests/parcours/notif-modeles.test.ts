@@ -1204,6 +1204,13 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 "Event Village : rappel, commande CMD-261205-A1B2 prévue à 12:45 chez Chez Fatou. Pensez à votre code de remise."],
             ["ORDER_SCHEDULED_REMINDER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "mode": "SUR_PLACE"}, [],
                 "Event Village : rappel, commande CMD-261205-A1B2 prévue à 12:45 chez Chez Fatou. Elle vous sera servie sur place."],
+            // Lot 12d (ajout signalé au rapport) : client absent, décision de l'équipe
+            ["ORDER_CLIENT_ABSENT", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "wait_until": "2026-12-05T12:45:00Z"}, [],
+                "Event Village : commande CMD-261205-A1B2, le livreur n'a pas pu vous joindre. Il attend jusqu'à 12:45 : rappelez le numéro qui vous a appelé."],
+            ["ORDER_ABSENCE_DECIDED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "refund_amount": 5250}, [],
+                "Event Village : commande CMD-261205-A1B2 non livrée, client absent. Remboursement de 5 250 F CFA en cours."],
+            ["ORDER_ABSENCE_DECIDED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "refund_amount": 0}, [],
+                "Event Village : commande CMD-261205-A1B2 non livrée, client absent. Aucun remboursement : motif dans l'application."],
             ["PRODUCT_DECISION_SMS", {"product_name": "Bissap et bière", "decision": "AUTORISE", "partner_box": false}, [],
                 "Event Village : produit \"Bissap et bière\" vérifié : il se commande en ligne."],
             ["PRODUCT_DECISION_SMS", {"product_name": "Bissap et bière", "decision": "AUTORISE", "partner_box": true}, [],
