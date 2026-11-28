@@ -1,0 +1,116 @@
+TAP version 13
+[confirmation] paiement 1badff74-cb24-4041-bfb9-fd19e12ab947 encaissé mais non honorable (paiement en double du panier déjà réglé (7f3e373b-e244-4067-9e12-1a5909dac170)) : remboursement
+[webhook SamirPay] événement 53b43862-7936-4685-a128-53c31388b2a7 : REFUND_REQUIRED
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+# Subtest: 8.2 a — le second paiement réussi d’un même panier est remboursé
+    # Subtest: 1. A annulé, B confirmé, succès tardif de A par webhook : A remboursé, un seul jeu, un REFUND_PAID, une alerte par admin
+    ok 1 - 1. A annulé, B confirmé, succès tardif de A par webhook : A remboursé, un seul jeu, un REFUND_PAID, une alerte par admin
+      ---
+      duration_ms: 822.933197
+      type: 'test'
+      ...
+[confirmation] paiement d3ae5e10-1410-4443-ba43-972b83c58048 encaissé mais non honorable (paiement en double du panier déjà réglé (07a2cb3a-ecbf-4320-a270-151b52615b6b)) : remboursement
+    # Subtest: 2. même chose par le cron : A EXPIRED, rattrapage tardif (RECONCILIATION), A remboursé
+    ok 2 - 2. même chose par le cron : A EXPIRED, rattrapage tardif (RECONCILIATION), A remboursé
+      ---
+      duration_ms: 757.810577
+      type: 'test'
+      ...
+[confirmation] paiement 9737924f-4e05-4b59-bb87-1a7d6745ba4d encaissé mais non honorable (paiement en double du panier déjà réglé (5e3b46cc-779e-456b-84ea-aad8887a90f3)) : remboursement
+[webhook SamirPay] événement 0362ceab-06c9-469e-8974-aa9d2a934eee : REFUND_REQUIRED
+    # Subtest: 3. ordre inverse : A expiré confirmé d’abord, B ensuite : B, second confirmé, est remboursé
+    ok 3 - 3. ordre inverse : A expiré confirmé d’abord, B ensuite : B, second confirmé, est remboursé
+      ---
+      duration_ms: 587.482268
+      type: 'test'
+      ...
+[confirmation] paiement b9e2c2b9-5b40-434b-bb17-a7d44b3d4d33 encaissé mais non honorable (paiement en double du panier déjà réglé (f77310f4-efde-452b-83a2-1657131b365d)) : remboursement
+[webhook SamirPay] événement 1311471f-4b20-4338-94f7-b0e8a9b5730c : REFUND_REQUIRED
+[webhook SamirPay] événement 1311471f-4b20-4338-94f7-b0e8a9b5730c : REFUND_IN_PROGRESS
+    # Subtest: 4. rejeu du webhook : REFUND_IN_PROGRESS, pas de second cashout, pas de second envoi
+    ok 4 - 4. rejeu du webhook : REFUND_IN_PROGRESS, pas de second cashout, pas de second envoi
+      ---
+      duration_ms: 629.07594
+      type: 'test'
+      ...
+    # Subtest: 8. concurrence : deux payment_confirm sur deux connexions, le second attend le premier : un seul jeu
+    ok 5 - 8. concurrence : deux payment_confirm sur deux connexions, le second attend le premier : un seul jeu
+      ---
+      duration_ms: 615.86877
+      type: 'test'
+      ...
+    1..5
+ok 1 - 8.2 a — le second paiement réussi d’un même panier est remboursé
+  ---
+  duration_ms: 4154.861294
+  type: 'suite'
+  ...
+[confirmation] paiement 81b8500d-f928-465e-aed9-95517016b6be encaissé mais non honorable (paiement en double du panier déjà réglé (9ef16169-c356-4c62-bc8f-5987883ffb91)) : remboursement
+[webhook SamirPay] événement deaf0945-6f3d-46de-a036-0a2494140f5c : REFUND_REQUIRED
+# Subtest: 8.2 a — remboursement du double paiement qui n’aboutit pas du premier coup
+    # Subtest: 9. refus de l’opérateur : ADMIN_REFUND_TO_RETRY à l’admin, la relance par la route aboutit
+    ok 1 - 9. refus de l’opérateur : ADMIN_REFUND_TO_RETRY à l’admin, la relance par la route aboutit
+      ---
+      duration_ms: 712.701113
+      type: 'test'
+      ...
+[confirmation] paiement 9773eb54-5177-48a2-a6c8-cac4466a51ec encaissé mais non honorable (paiement en double du panier déjà réglé (71a69791-6131-4dcf-82ef-72ee0e79e829)) : remboursement
+[cashout] solde SamirPay indisponible, envoi REFUND-9773eb54-5177-48a2-a6c8-cac4466a51ec différé : Solde SamirPay indisponible (simulation du test)
+[webhook SamirPay] événement 83a62099-8965-4fa0-9e16-33384211f98f : REFUND_REQUIRED
+    # Subtest: 10. getSolde indisponible au premier envoi : A_ENVOYER, rien avant 5 minutes, puis le cron verse une seule fois
+    ok 2 - 10. getSolde indisponible au premier envoi : A_ENVOYER, rien avant 5 minutes, puis le cron verse une seule fois
+      ---
+      duration_ms: 694.94378
+      type: 'test'
+      ...
+    1..2
+ok 2 - 8.2 a — remboursement du double paiement qui n’aboutit pas du premier coup
+  ---
+  duration_ms: 1408.023789
+  type: 'suite'
+  ...
+# Subtest: 8.2 a — témoins : ce qui n’est pas un double paiement n’est jamais remboursé (L30)
+    # Subtest: 5. rachat séquentiel identique, après la confirmation du premier : deux jeux, aucun remboursement
+    ok 1 - 5. rachat séquentiel identique, après la confirmation du premier : deux jeux, aucun remboursement
+      ---
+      duration_ms: 462.115875
+      type: 'test'
+      ...
+    # Subtest: 6. panier différent (1 VIP annulé puis 2 VIP) : le succès tardif garde les deux jeux
+    ok 2 - 6. panier différent (1 VIP annulé puis 2 VIP) : le succès tardif garde les deux jeux
+      ---
+      duration_ms: 580.516872
+      type: 'test'
+      ...
+    # Subtest: 7. Y entièrement remboursé : X émet ses billets
+    ok 3 - 7. Y entièrement remboursé : X émet ses billets
+      ---
+      duration_ms: 510.993325
+      type: 'test'
+      ...
+    1..3
+ok 3 - 8.2 a — témoins : ce qui n’est pas un double paiement n’est jamais remboursé (L30)
+  ---
+  duration_ms: 1553.982743
+  type: 'suite'
+  ...
+[INVARIANT] double-paiement — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] double-paiement — purge des réservations échues : {"expired":0}
+[INVARIANT] double-paiement — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] double-paiement — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] double-paiement — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] double-paiement — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] double-paiement — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] double-paiement — envoyeur : 1000 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] double-paiement — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] double-paiement — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] double-paiement — (r)(s)(t) : 0 violation(s)
+1..3
+# tests 10
+# suites 3
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10780.708305
