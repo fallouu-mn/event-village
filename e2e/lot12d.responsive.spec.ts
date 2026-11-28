@@ -369,7 +369,7 @@ for (const theme of THEMES) {
 
                 await pp.goto(`/restaurants/${d.venueId}/menu`, { waitUntil: 'load' });
                 await expect(pp.getByTestId('pause-commandes')).toBeVisible({ timeout: 30_000 });
-                await expect(pp.getByTestId('pause-commandes')).toContainText('Ce restaurant reprend les commandes à');
+                await expect(pp.getByText(/^Ce restaurant reprend les commandes à \d{1,2} h( \d{2})?$/).first()).toBeVisible();
                 await expect(pp.getByRole('button', { name: 'Sans piment' })).toBeVisible();
                 await settle(pp);
                 await checkLayout(pp, w.width, w.phone, 'carte en pause');
