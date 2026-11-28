@@ -368,7 +368,7 @@ for (const theme of THEMES) {
                 await shot(pp, 'client-signalement-envoye', w.width, theme.key);
 
                 await pp.goto(`/restaurants/${d.venueId}/menu`, { waitUntil: 'load' });
-                await expect(pp.getByTestId('pause-commandes')).toBeVisible({ timeout: 30_000 });
+                await expect(pp.locator('[data-testid="pause-commandes"] >> visible=true').first()).toBeVisible({ timeout: 30_000 });
                 await expect(pp.getByText(/^Ce restaurant reprend les commandes à \d{1,2} h( \d{2})?$/).first()).toBeVisible();
                 await expect(pp.getByRole('button', { name: 'Sans piment' })).toBeVisible();
                 await settle(pp);
