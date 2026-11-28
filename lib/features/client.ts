@@ -12,7 +12,7 @@
  * Hors ligne (navigator.onLine faux, par exemple sur la page du billet hors ligne servie par le service worker),
  * aucune requête n'est tentée : les services restent masqués et la lecture part au retour du réseau (« online »).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 export interface ClientFeatureFlags {
     halls: boolean;
@@ -22,6 +22,16 @@ export interface ClientFeatureFlags {
 
 let shared: Promise<ClientFeatureFlags> | null = null;
 let resolved: ClientFeatureFlags | null = null;
+/** Composants à prévenir quand la lecture arrive (useSyncExternalStore). */
+const listeners = new Set<() => void>();
+
+function subscribe(onChange: () => void): () => void {
+    listeners.add(onChange);
+    return () => { listeners.delete(onChange); };
+}
+const clientFlags = (): ClientFeatureFlags | null => resolved;
+/** Rendu du serveur ET hydratation : jamais lus (le serveur ne lit pas GET /api/features). */
+const serverFlags = (): ClientFeatureFlags | null => null;
 
 function parseFlags(body: unknown): ClientFeatureFlags {
     const b = (body ?? {}) as Record<string, unknown>;
@@ -39,6 +49,7 @@ export function loadFeatureFlags(): Promise<ClientFeatureFlags> {
                 if (!res.ok) throw new Error(`/api/features : HTTP ${res.status}`);
                 const flags = parseFlags(await res.json());
                 resolved = flags;
+                listeners.forEach((l) => l());
                 return flags;
             })
             .catch((err: unknown) => {
@@ -49,40 +60,35 @@ export function loadFeatureFlags(): Promise<ClientFeatureFlags> {
     return shared;
 }
 
-/** Interrupteurs des services, ou null tant qu'ils ne sont pas lus. */
+/**
+ * Interrupteurs des services, ou null tant qu'ils ne sont pas lus.
+ * Lot stabilité (erreur d'hydratation n° 418) : l'état n'est plus initialisé avec la valeur gardée par le module (`resolved`).
+ * Un composant hydraté APRÈS la première lecture (contenu de page arrivé après la racine, morceau chargé à la demande)
+ * commençait avec les interrupteurs lus, alors que le serveur avait rendu « pas encore lus » : structure différente dès
+ * qu'un service est ouvert. useSyncExternalStore prend la valeur du serveur (null) pendant l'hydratation, puis la valeur
+ * lue ; un composant monté plus tard (navigation dans l'application) a tout de suite la valeur lue, sans clignotement.
+ */
 export function useFeatureFlags(): ClientFeatureFlags | null {
-    const [flags, setFlags] = useState<ClientFeatureFlags | null>(resolved);
+    const flags = useSyncExternalStore(subscribe, clientFlags, serverFlags);
     useEffect(() => {
-        if (resolved) {
-            setFlags(resolved);
-            return;
-        }
-        let alive = true;
+        if (resolved) return undefined;
+        // Valeur publiée à tous les abonnés par loadFeatureFlags (listeners) ; un échec laisse null (services masqués)
         const load = () => {
-            loadFeatureFlags()
-                .then((f) => {
-                    if (alive) setFlags(f);
-                })
-                .catch((err: unknown) => {
-                    console.error('[features] interrupteurs illisibles, services masqués :', err);
-                });
+            loadFeatureFlags().catch((err: unknown) => {
+                console.error('[features] interrupteurs illisibles, services masqués :', err);
+            });
         };
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
             // Hors ligne : pas de requête vouée à l'échec ; lecture au retour du réseau.
             const onOnline = () => {
                 window.removeEventListener('online', onOnline);
-                if (alive) load();
+                load();
             };
             window.addEventListener('online', onOnline);
-            return () => {
-                alive = false;
-                window.removeEventListener('online', onOnline);
-            };
+            return () => window.removeEventListener('online', onOnline);
         }
         load();
-        return () => {
-            alive = false;
-        };
+        return undefined;
     }, []);
     return flags;
 }
