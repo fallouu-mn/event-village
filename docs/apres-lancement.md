@@ -270,3 +270,25 @@ fiche d'une commande, saisie du code ; livreurs. Restent :
 | Fiche suspendue : l'écran d'un produit garde le formulaire, champs désactivés et sans bouton d'enregistrement (la base et la route refusent toute écriture). | Choix d'ergonomie à confirmer (fiche en lecture seule, sans formulaire). | Lot 12c |
 | Zones de livraison dessinées sur une carte ; QR de table pour la commande sur place. | Hors périmètre du lot (décisions du client : liste de quartiers, liste des tables au lancement). | Consigne du lot 12c |
 | Le choix « colonnes ou onglets » de l'écran des commandes se fait après le chargement (squelette d'abord) ; le glissement d'une carte d'une colonne à l'autre passe par la transition de vue du navigateur (fondu sinon). | Un seul rendu par carte (pas d'identifiants en double) ; à revoir si le client trouve le premier affichage lent. | Lot 12c |
+
+## Commandes : livreur et administration (lot 12d)
+
+Faits au lot 12d (docs/lot12d-rapport.md) : espace du livreur (`/courier/orders`), client absent (deux appels, 30 minutes,
+décision de l'équipe), « Signaler un problème », administration des commandes (`/admin/orders`), commandes prévues pendant
+une fermeture, pause des commandes, allergènes et piment ; la ligne « Livraison ratée » et la ligne « Signalement d'un
+problème » du lot 12a sont traitées. Restent :
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Retrait par un proche (code envoyé à un autre numéro), commande groupée, suivi GPS du livreur. | Hors périmètre (consigne). | Consigne du lot 12d |
+| Statistiques des commandes et plats du jour sur l'accueil. | Lot 12e. | Consigne du lot 12d |
+| Rembourser une partie d'une commande déjà remise (« commande incomplète » signalée après la livraison) : `order_cancel` refuse une commande close ; l'équipe répond au signalement, sans remboursement (décision du client : rien d'automatique). | Un remboursement manuel d'une commande close (montant, motif, droit `refunds.manage`) demande une fonction en base à part et sa contre-vérification. | Lot 12d |
+| Décision après une absence : part rendue en pourcentage (1 à 99 %), pas en montant libre. | Le pourcentage s'applique à chaque paiement (acompte, solde) avec le calcul existant du moteur ; un montant libre demande de le répartir entre paiements. | Lot 12d |
+| Délai d'attente du client absent (30 minutes) fixé dans `order_delivery_step`, pas réglable depuis l'administration. | Un réglage demandait de recopier `finance_setting_set`, déjà recopiée par le lot 12a (une seule recopie par lot exigée) ; à ajouter avec le prochain lot qui touche les réglages. | Lot 12d |
+| Le client voit le numéro personnel du livreur qui l'appelle. | Numéro masqué (appel relayé) : service téléphonique hors périmètre. | Lot 12d |
+| Signalement sans photo ni échange de messages avec l'équipe (un motif, un texte court, une réponse). | Messagerie et pièces jointes : à faire si le volume le demande. | Lot 12d |
+| Allergènes : liste fermée de 14, sans « traces de » ; filtre de la carte « Sans piment » seulement (pas de filtre par allergène). | Premier niveau demandé par la consigne ; un filtre par allergène est simple à ajouter sur les mêmes données. | Lot 12d |
+| Fermeture exceptionnelle : décision commande par commande (pas de « tout annuler »). | Décision du client : rien d'automatique ; un « tout annuler et rembourser » confirmé avec le total est possible ensuite. | Lot 12d |
+| Liste des commandes d'une fermeture : une panne autre qu'un « introuvable » masque la section (écrite dans la console du navigateur). | Section complémentaire de l'écran des fermetures (lot 11b) ; un bandeau d'erreur dédié est à prévoir. | Lot 12d |
+| Écran de réussite du livreur après la remise : le reste encaissé n'y est pas rappelé (la route ne le rend pas au livreur). | Ajout simple à la réponse de la route (montant déjà noté en base). | Lot 12d |
+| Pause programmée à l'avance (« fermé de 14 h à 15 h tous les jours ») et pause de tous les établissements d'un coup. | La pause en un geste couvre le coup de feu ; les horaires et les fermetures exceptionnelles couvrent le reste. | Lot 12d |
