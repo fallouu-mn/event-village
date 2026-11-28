@@ -85,7 +85,8 @@ describe('A1 — essais de mot de passe limités par compte', () => {
         assert.equal((await outboxRows({ type: 'ACCOUNT_LOGIN_FAILURES', userId: target.userId })).length, 0, 'aucun avis avant le 10e échec');
         await failTimes(target.phoneE164, 1);
         const rows = await outboxRows({ type: 'ACCOUNT_LOGIN_FAILURES', userId: target.userId });
-        assert.deepEqual(rows.map((r) => r.channel).sort(), ['EMAIL', 'SMS'], `avis du 10e échec : ${JSON.stringify(rows.map((r) => [r.channel, r.status]))}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + cloche et notification (B4)
+        assert.deepEqual(rows.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `avis du 10e échec : ${JSON.stringify(rows.map((r) => [r.channel, r.status]))}`);
         await failTimes(target.phoneE164, 5);
         assert.equal((await outboxRows({ type: 'ACCOUNT_LOGIN_FAILURES', userId: target.userId })).length, 2, 'aucun avis de plus le même jour');
         const before = getFakes().sms.messagesTo(target.phoneE164).length;

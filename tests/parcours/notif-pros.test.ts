@@ -387,7 +387,8 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         const second = await buyConfirmed(b2, ev, [['Standard', 2]]);
         assert.equal((await outboxRows({ type: 'FIRST_TICKET_SOLD', eventId: ev.eventId })).length, 4, 'deuxième vente : aucun nouveau « premier billet »');
         const bells = await outboxRows({ type: 'NEW_ORDER', userId: p.userId, eventId: ev.eventId });
-        assert.deepEqual(bells.map((r) => r.channel), ['IN_APP'], `une seule cloche pour les deux paiements : ${JSON.stringify(bells.map((r) => r.group_key))}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification, même série (B14)
+        assert.deepEqual(bells.map((r) => r.channel).sort(), ['IN_APP', 'PUSH'], `une seule cloche (et une seule notification) pour les deux paiements : ${JSON.stringify(bells.map((r) => r.group_key))}`);
         assert.deepEqual([Number(bells[0].template_data.ticket_count), Number(bells[0].template_data.order_count)], [3, 2], 'cloche groupée : 3 billets, 2 commandes');
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows);

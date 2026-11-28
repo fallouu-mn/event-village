@@ -20,7 +20,9 @@
 --  B13 EVENT_SUSPENDED_HOLDER : famille indispensable (plus de sujet, plus de préférence : décision D5 du 27/11), reportée
 --      la nuit sauf événement à moins de 12 h ; les rappels de table restent désactivables (D5) ;
 --  B14 NEW_ORDER (ventes groupées de 15 minutes) : + notification, toujours désactivable (sujet PRO_ACTIVITY).
--- Recopie : account_phone_finalize, de 20261120000006_f3d_cv_numero_profil.sql:8-135 (ajouts seuls, droits inchangés).
+-- Recopies (ajouts seuls, droits inchangés) : account_phone_finalize, de 20261120000006_f3d_cv_numero_profil.sql:8-135 ;
+-- notif_enqueue_grouped, de 20261125000003_f4_ventes.sql:37-92 (B14 : la notification des ventes reportée la nuit ne retient
+-- plus la série, et une seule reste en attente par série).
 -- Sans BEGIN ni COMMIT, rejouable (UPDATE à valeurs fixes, CREATE OR REPLACE).
 -- ============================================================================
 
@@ -175,3 +177,73 @@ $$;
 
 REVOKE ALL ON FUNCTION public.account_phone_finalize(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.account_phone_finalize(jsonb) TO service_role;
+
+-- 3. notif_enqueue_grouped (recopie de 20261125000003_f4_ventes.sql:37-92)
+CREATE OR REPLACE FUNCTION public.notif_enqueue_grouped(p jsonb)
+RETURNS integer
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_type    text := p->>'type';
+    v_scope   text := NULLIF(btrim(COALESCE(p->>'scope', '')), '');
+    v_window  integer := NULLIF(p->>'window_minutes', '')::integer;
+    v_add     jsonb := COALESCE(p->'add', '{}'::jsonb);
+    v_now     timestamptz := COALESCE(NULLIF(p->>'now', '')::timestamptz, now());
+    v_prefix  text;
+    v_group   text;
+    v_last    timestamptz;
+    v_due     timestamptz;
+BEGIN
+    IF v_type IS NULL OR v_scope IS NULL OR v_window IS NULL OR v_window < 1 OR jsonb_typeof(v_add) <> 'object' THEN
+        RAISE EXCEPTION USING ERRCODE = 'NT004', MESSAGE = 'Avis groupé : type, série, fenêtre ou compteurs absents.';
+    END IF;
+    v_prefix := v_type || ':' || v_scope || ':';
+    PERFORM pg_advisory_xact_lock(hashtextextended('notif-group:' || v_prefix, 0));
+
+    SELECT o.group_key INTO v_group
+      FROM public.notification_outbox o
+     WHERE o.type = v_type AND left(o.group_key, length(v_prefix)) = v_prefix AND o.status = 'PENDING'
+       -- Avis phase 2 (2a, B14) : la notification des ventes reportée la nuit ne garde pas la série ouverte (la cloche partie,
+       -- la vente suivante ouvre une série nouvelle et sa propre cloche)
+       AND (v_type <> 'NEW_ORDER' OR o.channel <> 'PUSH')
+     ORDER BY o.created_at DESC, o.id
+     LIMIT 1;
+    IF v_group IS NOT NULL THEN
+        UPDATE public.notification_outbox o
+           SET template_data = o.template_data || (
+                   SELECT COALESCE(jsonb_object_agg(a.key,
+                              to_jsonb(COALESCE(CASE WHEN o.template_data->>a.key ~ '^-?[0-9]+(\.[0-9]+)?$'
+                                                     THEN (o.template_data->>a.key)::numeric END, 0) + a.value::numeric)), '{}'::jsonb)
+                     FROM jsonb_each_text(v_add) AS a)
+         WHERE o.group_key = v_group AND o.status = 'PENDING';
+        RETURN 0;
+    END IF;
+
+    -- Avis phase 2 (2a, B14) : une seule notification des ventes en attente par série : celle de la série précédente, déjà
+    -- couverte par sa cloche, est remplacée par la nouvelle (jamais une rafale de notifications à la fin de la nuit)
+    IF v_type = 'NEW_ORDER' THEN
+        UPDATE public.notification_outbox o
+           SET status = 'CANCELLED', reason = 'SUPERSEDED', finished_at = now()
+         WHERE o.type = v_type AND left(o.group_key, length(v_prefix)) = v_prefix AND o.channel = 'PUSH' AND o.status = 'PENDING';
+    END IF;
+    SELECT max(o.due_at) INTO v_last
+      FROM public.notification_outbox o
+     WHERE o.type = v_type AND left(o.group_key, length(v_prefix)) = v_prefix;
+    v_due := GREATEST(v_now, COALESCE(v_last + make_interval(mins => v_window), v_now),
+                      COALESCE(NULLIF(p->>'not_before', '')::timestamptz, v_now));
+    RETURN public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(
+        'type', v_type,
+        'key', v_prefix || gen_random_uuid()::text,
+        'user_id', p->>'user_id',
+        'event_id', p->>'event_id',
+        'due_at', v_due,
+        'now', p->>'now',
+        'channels', p->'channels',
+        'data', COALESCE(p->'data', '{}'::jsonb) || v_add || jsonb_build_object('since', v_now))));
+END;
+$$;
+REVOKE ALL ON FUNCTION public.notif_enqueue_grouped(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.notif_enqueue_grouped(jsonb) TO service_role;

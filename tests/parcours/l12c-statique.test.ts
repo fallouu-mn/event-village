@@ -177,6 +177,9 @@ describe('l12c — contrôles sans base', () => {
             expected[m[1]] = { channels: m[2].replace(/'/g, '').split(',').map((s) => s.trim()), audience: m[3], policy: m[4], perm: m[5] === 'NULL' ? null : m[5].replace(/'/g, ''), night: m[6] };
         }
         assert.deepEqual(Object.keys(expected).sort(), ['ADMIN_PRODUCT_REVIEW', 'PRODUCT_REVIEW_DECIDED']);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : ADMIN_PRODUCT_REVIEW reçoit la notification du téléphone (B8, migration
+        // 20261230000004_avis_admins.sql) : canaux du 12c + PUSH
+        expected.ADMIN_PRODUCT_REVIEW.channels = [...expected.ADMIN_PRODUCT_REVIEW.channels, 'PUSH'];
         for (const [type, e] of Object.entries(expected)) {
             const tpl = (NOTIFICATION_CATALOG as unknown as Record<string, { channels: readonly string[]; audience: string; suspendedPolicy: string; adminPermission: string | null; nightPolicy: string }>)[type];
             assert.ok(tpl, `${type} absent du catalogue`);

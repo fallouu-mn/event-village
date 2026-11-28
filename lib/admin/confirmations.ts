@@ -48,7 +48,8 @@ const ALL_CHANNELS: NoticeChannel[] = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'];
 export const CONFIRMATION_NOTICES: Readonly<Record<ConfirmationKey, Notice[]>> = {
     event_suspend: [
         { who: 'le partenaire', type: 'EVENT_SUSPENDED', channels: PARTNER_FULL, withReason: true },
-        { who: 'les détenteurs de billets', type: 'EVENT_SUSPENDED_HOLDER', channels: ALL_CHANNELS, withReason: false, optIn: true },
+        // Lot « Avis », phase 2 (B13, décision D5) : la suspension est indispensable, plus de préférence
+        { who: 'les détenteurs de billets', type: 'EVENT_SUSPENDED_HOLDER', channels: ALL_CHANNELS, withReason: false },
         { who: 'les contrôleurs affectés', type: 'CONTROLLER_EVENT_STATUS', channels: ALL_CHANNELS, withReason: false },
     ],
     event_reactivate: [
@@ -79,7 +80,8 @@ export const CONFIRMATION_NOTICES: Readonly<Record<ConfirmationKey, Notice[]>> =
     // prévient leurs détenteurs et leurs contrôleurs, pas la partenaire une seconde fois (marqueur de cascade).
     partner_suspend: [
         { who: 'le partenaire', type: 'PARTNER_SUSPENDED', channels: PARTNER_ACCOUNT, withReason: true },
-        { who: 'les détenteurs de billets de ses événements en ligne', type: 'EVENT_SUSPENDED_HOLDER', channels: ALL_CHANNELS, withReason: false, optIn: true },
+        // Lot « Avis », phase 2 (B13, décision D5) : la suspension est indispensable, plus de préférence
+        { who: 'les détenteurs de billets de ses événements en ligne', type: 'EVENT_SUSPENDED_HOLDER', channels: ALL_CHANNELS, withReason: false },
         { who: 'les contrôleurs de ses événements', type: 'CONTROLLER_EVENT_STATUS', channels: ALL_CHANNELS, withReason: false },
     ],
     partner_reactivate: [

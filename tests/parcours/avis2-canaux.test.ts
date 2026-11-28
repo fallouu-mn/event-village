@@ -79,6 +79,9 @@ describe('2a.2 — B2 : numéro changé par le profil', () => {
         assert.equal(error, null, error?.message);
         const oldPhone = String(u!.phone);
         const newPhone = randomSenegalPhone('76');
+        // Comme la route (app/api/profile/phone) : le numéro de l'authentification change d'abord (invariant v des suites)
+        const { error: authErr } = await service.auth.admin.updateUserById(b.userId, { phone: newPhone });
+        assert.equal(authErr, null, authErr?.message);
         const { data, error: rpcErr } = await service.rpc('account_phone_finalize', {
             p: { user_id: b.userId, new_phone: newPhone, expected_phone: oldPhone, keep_session_id: randomUUID() },
         });

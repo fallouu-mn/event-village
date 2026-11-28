@@ -120,10 +120,11 @@ describe('9t.10 (R95) : publication et retrait par l\'organisatrice', () => {
         assert.equal(step.actor_role, 'PARTENAIRE', 'publication par la partenaire');
 
         const mine = await rowsFor('ADMIN_EVENT_PUBLISHED', reader.userId, ev.eventId);
-        assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP'], `lecteur events.read : in-app et email : ${brief(mine)}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `lecteur events.read : in-app, email et notification : ${brief(mine)}`);
         assert.ok(mine.every((r) => r.group_key === `ADMIN_EVENT_PUBLISHED:${step.id}:${reader.userId}`), `clé <type>:<historique>:<admin> : ${brief(mine)}`);
         const sa = await rowsFor('ADMIN_EVENT_PUBLISHED', superadmin, ev.eventId);
-        assert.deepEqual(sa.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP'], `SUPERADMIN : ${brief(sa)}`);
+        assert.deepEqual(sa.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `SUPERADMIN : ${brief(sa)}`);
         assert.deepEqual(await rowsFor('ADMIN_EVENT_PUBLISHED', bare.userId, ev.eventId), [], 'admin sans events.read : rien');
         assert.deepEqual(await outboxRows({ type: 'ADMIN_EVENT_PUBLISHED', eventId: ev.eventId, channel: 'SMS' }), [], 'aucun SMS');
 
@@ -146,7 +147,8 @@ describe('9t.10 (R95) : publication et retrait par l\'organisatrice', () => {
         assertRpcOk(await rpcTransition(ev.eventId, partner.userId, 'EN_ATTENTE'), 'soumission');
         assertRpcOk(await rpcTransition(ev.eventId, partner.userId, 'BROUILLON'), 'retrait de la validation par la partenaire');
         const mine = await rowsFor('ADMIN_EVENT_WITHDRAWN', reader.userId, ev.eventId);
-        assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP'], `lecteur events.read : ${brief(mine)}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `lecteur events.read : ${brief(mine)}`);
         assert.deepEqual(await rowsFor('ADMIN_EVENT_WITHDRAWN', bare.userId, ev.eventId), [], 'admin sans events.read : rien');
         assert.deepEqual(await deliveredInApp(mine, reader.userId, ev.title), [{
             title: 'Soumission retirée par l\'organisateur',
@@ -171,7 +173,8 @@ describe('9t.10 (R95) : prix et canaux changés après validation', () => {
 
         const mine = (await rowsFor('ADMIN_EVENT_CHANGED', reader.userId, ev.eventId)).filter((r) => r.group_key.includes(`:catupd${cat}:tx`));
         assert.equal(groups(mine).length, 1, `une alerte (clé …:catupd<catégorie>:tx<txid>) : ${brief(mine)}`);
-        assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP'], brief(mine));
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], brief(mine));
         const d = mine[0].template_data;
         assert.deepEqual({ changes: d.changes, category: d.category, old_price: Number(d.old_price), new_price: Number(d.new_price) },
             { changes: ['PRICE'], category: VIP, old_price: 10_000, new_price: 15_000 }, `données de l'alerte : ${JSON.stringify(d)}`);

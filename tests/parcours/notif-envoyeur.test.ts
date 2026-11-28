@@ -144,7 +144,8 @@ async function signals(kind: string, refIds: string[]): Promise<Array<Record<str
 async function assertFailedAlert(outboxId: string, failedType: string, channel: string, reason: string): Promise<void> {
     const alerts = await failedAlerts(outboxId);
     const ofAdmin = alerts.filter((a) => a.recipient_user_id === adminWith.userId); const mine = ofAdmin.filter((a) => a.channel === 'IN_APP'); // lot 9 bis (G.49, B97) : IN_APP et EMAIL
-    assert.deepEqual(ofAdmin.map((a) => a.channel).sort(), ['EMAIL', 'IN_APP'], `ADMIN_NOTIFICATION_FAILED pour l’admin qui a notifications.read, une ligne par canal du registre : ${JSON.stringify(alerts.map((a) => a.idempotency_key))}`);
+    // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+    assert.deepEqual(ofAdmin.map((a) => a.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `ADMIN_NOTIFICATION_FAILED pour l’admin qui a notifications.read, une ligne par canal du registre : ${JSON.stringify(alerts.map((a) => a.idempotency_key))}`);
     assert.equal(mine[0].idempotency_key, `ADMIN_NOTIFICATION_FAILED:${outboxId}:${adminWith.userId}:IN_APP`, 'clé de l’alerte');
     assert.equal(mine[0].channel, 'IN_APP');
     assert.deepEqual(
@@ -568,7 +569,8 @@ describe('6.1 Envoyeur : plafond SMS et seuil du jour (décision 4, contrat E3 ;
         });
         const all = await outboxRows({ type: 'ADMIN_SMS_OPTIONAL_80', keyPrefix: `ADMIN_SMS_OPTIONAL_80:${day}:` });
         const mine = all.filter((a) => a.recipient_user_id === adminWith.userId);
-        assert.deepEqual(mine.map((a) => a.channel).sort(), ['EMAIL', 'IN_APP'], `alerte du jour pour l’admin (I M) : ${JSON.stringify(mine.map((a) => a.idempotency_key))}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        assert.deepEqual(mine.map((a) => a.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `alerte du jour pour l’admin (I M P) : ${JSON.stringify(mine.map((a) => a.idempotency_key))}`);
         for (const a of mine) {
             assert.equal(a.idempotency_key, `ADMIN_SMS_OPTIONAL_80:${day}:${adminWith.userId}:${a.channel}`, 'clé par jour et par admin');
             assert.equal(a.template_data.day, day);

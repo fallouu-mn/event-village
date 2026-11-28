@@ -55,7 +55,7 @@ describe('2f — parrainage', () => {
         const ev = await createPartnerEvent(partner.partnerId, 'avis2-parrainage', [{ name: 'Standard', price: 20_000, total: 20 }]);
         await buyConfirmed(referred, ev, [['Standard', 1]]);
         await buyConfirmed(referred, ev, [['Standard', 1]]);
-        const { data: comms, error } = await service.from('referral_commissions').select('id, amount').eq('sponsor_id', sponsor.userId).eq('kind', 'COMMISSION');
+        const { data: comms, error } = await service.from('referral_commissions').select('id, amount, available_at, status, cancelled_at, cancellation_reason').eq('sponsor_id', sponsor.userId).eq('kind', 'COMMISSION');
         assert.equal(error, null, error?.message);
         assert.ok((comms ?? []).length >= 2, `commissions créées par les achats du filleul : ${JSON.stringify(comms)}`);
         // Contrôle « demain à 10 h » (Dakar) : la veille = aujourd'hui ; disponibles entre aujourd'hui 9 h et demain 9 h
@@ -67,10 +67,21 @@ describe('2f — parrainage', () => {
         assert.equal(e1, null, e1?.message);
         const { error: e2 } = await service.from('referral_commissions').update({ status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancellation_reason: 'Remboursement (test avis 2f)' }).eq('id', cancelled.id);
         assert.equal(e2, null, e2?.message);
-        for (let i = 0; i < 2; i += 1) {
-            const { data, error: dErr } = await service.rpc('notification_daily_checks', { p: { now: now.toISOString() } });
-            assert.equal(dErr, null, dErr?.message);
-            assert.equal((data as { ok?: boolean }).ok, true, JSON.stringify(data));
+        try {
+            for (let i = 0; i < 2; i += 1) {
+                const { data, error: dErr } = await service.rpc('notification_daily_checks', { p: { now: now.toISOString() } });
+                assert.equal(dErr, null, dErr?.message);
+                assert.equal((data as { ok?: boolean }).ok, true, JSON.stringify(data));
+            }
+        } finally {
+            // Les deux commissions retrouvent leur état d'origine (invariants de fin de suite : disponibilité après la fin de
+            // l'événement, annulation réelle) ; les avis déjà mis en file restent pour les contrôles ci-dessous
+            for (const c of [kept, cancelled]) {
+                const { error: rErr } = await service.from('referral_commissions').update({
+                    available_at: c.available_at, status: c.status, cancelled_at: c.cancelled_at, cancellation_reason: c.cancellation_reason,
+                }).eq('id', c.id);
+                assert.equal(rErr, null, rErr?.message);
+            }
         }
         const earned = await outboxRows({ type: 'REFERRAL_EARNED', userId: sponsor.userId });
         assert.deepEqual(channels(earned), ['IN_APP', 'PUSH'], `une fois, cloche et notification : ${describeRows(earned)}`);

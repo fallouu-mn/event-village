@@ -326,7 +326,8 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         assert.ok(sender.every((r) => r.recipient_user_id === owner.userId), 'à l’expéditeur');
         const received = await outboxRows({ type: 'TRANSFER_RECEIVED', keyPrefix: `TRANSFER_RECEIVED:${id}:` });
         // Lot 7, tâche 7.9 (D91) : le destinataire reçoit aussi l'email de confirmation (nouveau numéro du billet).
-        assert.deepEqual(channelsOf(received), ['EMAIL', 'IN_APP', 'PUSH'], `destinataire prévenu (in-app, push, email ; D91) : ${JSON.stringify(received.map((r) => r.channel))}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + SMS (B1)
+        assert.deepEqual(channelsOf(received), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `destinataire prévenu (in-app, push, email ; D91 ; SMS : avis phase 2) : ${JSON.stringify(received.map((r) => r.channel))}`);
         assert.ok(received.every((r) => r.recipient_user_id === to.userId), 'au destinataire');
         const mark = smsMark(owner.phoneE164);
         const markTo = smsMark(to.phoneE164);

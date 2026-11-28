@@ -142,7 +142,8 @@ describe('A. « à vérifier » posé par la base', () => {
         assert.deepEqual([p.review_state, p.review_words], ['A_VERIFIER', ['bière', 'gazelle']]);
         const { data: box } = await service.from('notification_outbox').select('type, channel')
             .eq('recipient_user_id', reviewer.userId).eq('type', 'ADMIN_PRODUCT_REVIEW').eq('template_data->>product_id', String(p.id));
-        assert.deepEqual((box ?? []).map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP'], 'administrateur partners.validate prévenu (cloche, email)');
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B8)
+        assert.deepEqual((box ?? []).map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP', 'PUSH'], 'administrateur partners.validate prévenu (cloche, email, notification)');
         const q = await quote(orderBody(shop, [{ productId: String(p.id), quantity: 1 }]));
         assert.deepEqual([q.ok, q.code], [false, 'PRODUCT_UNDER_REVIEW'], JSON.stringify(q));
         assert.match(String(q.message), /en cours de vérification/);

@@ -381,7 +381,8 @@ describe('7.0 a Alerte à 80 % du budget optionnel, une fois par jour (M2.6, D15
             }
             assert.equal(c2.alerted, false, `second contrôle du jour : aucune nouvelle alerte (${JSON.stringify(c2)})`);
             const { all, mine } = await optional80(me.eve);
-            assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP'], `une alerte par canal pour l'admin notifications.read : ${JSON.stringify(mine.map((r) => r.idempotency_key))}`);
+            // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+            assert.deepEqual(mine.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `une alerte par canal pour l'admin notifications.read : ${JSON.stringify(mine.map((r) => r.idempotency_key))}`);
             for (const r of mine) {
                 assert.equal(r.idempotency_key, `ADMIN_SMS_OPTIONAL_80:${me.eve}:${admin.userId}:${r.channel}`, 'clé par jour et par admin');
                 assert.equal(r.family, 'ESSENTIAL', 'alerte admin : famille ESSENTIAL');
@@ -441,7 +442,8 @@ describe('7.0 a Alerte à 80 % du budget optionnel, une fois par jour (M2.6, D15
         assert.equal(out.alertsBelow, 0, '559 : aucune ligne ADMIN_SMS_OPTIONAL_80');
         assert.equal(out.reached.alerted, true, `560 : alerte (${JSON.stringify(out.reached)})`);
         assert.ok(out.alertsReached > 0, '560 : lignes ADMIN_SMS_OPTIONAL_80 créées');
-        assert.equal(out.mineReached, 2, '560 : in-app et email pour l’admin de la suite');
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        assert.equal(out.mineReached, 3, '560 : in-app, email et notification pour l’admin de la suite');
         assert.deepEqual((await optional80(day)).all, [], 'transaction annulée : aucune alerte ne reste');
     });
 });

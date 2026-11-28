@@ -55,7 +55,7 @@ async function nightRow(type: string, data: Record<string, unknown>, eventId?: s
     const t = tpl(type);
     const channel = t.channels.includes('SMS') ? 'SMS' : 'PUSH';
     const row = await insertOutboxRow({
-        type, family: t.family, topic: t.topic, channel, recipient_user_id: buyer.userId,
+        type, family: t.family as 'ESSENTIAL' | 'OPTIONAL', topic: t.topic, channel, recipient_user_id: buyer.userId,
         ...(channel === 'SMS' ? { recipient_phone: buyer.phoneE164 } : {}),
         event_id: eventId ?? null, template_data: data, due_at: at.toISOString(), next_attempt_at: at.toISOString(),
     });

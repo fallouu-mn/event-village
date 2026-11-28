@@ -22,7 +22,7 @@ after(async () => {
     await assertNotificationInvariants('avis2-admins');
 });
 
-async function alert(type: string, data: Record<string, unknown>, ref = randomUUID()): Promise<string> {
+async function alert(type: string, data: Record<string, unknown>, ref: string = randomUUID()): Promise<string> {
     const { error } = await service.rpc('notif_enqueue_admins', { p: { type, ref, data } });
     assert.equal(error, null, `${type} : ${error?.message}`);
     return ref;

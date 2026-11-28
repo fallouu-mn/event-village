@@ -668,7 +668,8 @@ describe('7.9 — billet reçu par transfert (TRANSFER_RECEIVED, D88, D91)', () 
         assert.notEqual(newNumber, String(before0.ticket_number), 'numéro renouvelé par le transfert');
 
         const rows = await outboxRows({ type: 'TRANSFER_RECEIVED', keyPrefix: `TRANSFER_RECEIVED:${transferId}:` });
-        assert.deepEqual(rows.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `canaux du destinataire (EMAIL ajouté, D91) : ${JSON.stringify(rows.map((r) => r.channel))}`);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + SMS (B1)
+        assert.deepEqual(rows.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `canaux du destinataire (EMAIL ajouté, D91 ; SMS : avis phase 2) : ${JSON.stringify(rows.map((r) => r.channel))}`);
         const ch = byChannel(rows, 'billet reçu');
         const data = ch.EMAIL!.template_data;
         assert.equal(data.ticket_number, newNumber, `template_data.ticket_number = nouveau numéro (D88) : ${JSON.stringify(data)}`);
@@ -975,7 +976,8 @@ describe('7.9 — migration 20261105000007 : notif_ticket_lines et fonctions ém
         assert.match(accept, /'category'\s*,/, 'ticket_transfer_accept : catégorie dans les données de TRANSFER_RECEIVED (19.3.4)');
         assert.match(accept, /FOR\s+SHARE/i, 'ticket_transfer_accept : verrou FOR SHARE de M3 conservé (D97)');
         assert.equal(channels.length, 1, 'type TRANSFER_RECEIVED au registre');
-        assert.deepEqual([...channels[0].channels].sort(), ['EMAIL', 'IN_APP', 'PUSH'], 'registre : TRANSFER_RECEIVED avec EMAIL (19.3.5)');
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + SMS (B1)
+        assert.deepEqual([...channels[0].channels].sort(), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'registre : TRANSFER_RECEIVED avec EMAIL (19.3.5) et SMS (avis phase 2)');
     });
 });
 

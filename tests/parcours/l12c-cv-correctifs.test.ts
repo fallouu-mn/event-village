@@ -264,7 +264,8 @@ describe('C. revue groupée des produits déjà en vente (T3)', () => {
             assert.equal((await product(allowed)).review_state, null, 'produit autorisé (mot « bière » déjà vu) non repris');
 
             const box = (await adminBox(reviewer.userId, 'ADMIN_PRODUCTS_REVIEW_BATCH', since)).filter((b) => (b.template_data as Row).origin === 'LISTE');
-            assert.deepEqual(box.map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP'], 'un seul avis groupé (cloche, email)');
+            // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B8)
+            assert.deepEqual(box.map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP', 'PUSH'], 'un seul avis groupé (cloche, email, notification)');
             assert.equal((await adminBox(reviewer.userId, 'ADMIN_PRODUCT_REVIEW', since)).filter((b) => (b.template_data as Row).product_id === zorbex).length, 0,
                 'pas un avis par produit');
             const last = (await queue()).lastBatch as Row;
@@ -376,7 +377,8 @@ describe('F. catégories (T5)', () => {
         const after = await product(p);
         assert.deepEqual([after.review_state, after.review_words], ['A_VERIFIER', ['bière', 'vin']]);
         const box = (await adminBox(reviewer.userId, 'ADMIN_PRODUCTS_REVIEW_BATCH', since)).filter((b) => (b.template_data as Row).origin === 'CATEGORIE');
-        assert.deepEqual(box.map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP']);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B8)
+        assert.deepEqual(box.map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP', 'PUSH']);
 
         const other2 = await reply(await categoriesPost(req('/api/partner/products/categories', 'POST', partner.accessToken, { name: `Desserts ${stamp}` })));
         const clash = await reply(await categoryPatch(req(`/api/partner/products/categories/${String((other2.body.category as Row).id)}`, 'PATCH', partner.accessToken, { name: `bières et vins ${stamp}` }), params({ id: String((other2.body.category as Row).id) })));

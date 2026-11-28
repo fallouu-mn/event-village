@@ -1258,7 +1258,8 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         assert.ok(keys.has(`${prefix}${withPerm}:IN_APP`) && keys.has(`${prefix}${withPerm}:EMAIL`), 'ADMIN avec notifications.read destinataire (IN_APP et EMAIL, G.49)');
         assert.ok(!Array.from(keys).some((key) => key.includes(noPerm)), 'ADMIN sans la permission : aucune ligne');
         for (const row of r.rows) {
-            assert.ok(row.channel === 'IN_APP' || row.channel === 'EMAIL', `canaux du registre (I, E : G.49) : ${row.channel}`);
+            // Lot « Avis », phase 2 (modification signalée au rapport) : + notification aux alertes d'administration (B11)
+            assert.ok(row.channel === 'IN_APP' || row.channel === 'EMAIL' || row.channel === 'PUSH', `canaux du registre (I, E : G.49 ; P : avis phase 2) : ${row.channel}`);
             assert.equal(row.idempotency_key, `${prefix}${row.recipient_user_id}:${row.channel}`, 'clé type:ref:admin:canal');
             assert.equal((row.template_data as { outbox_id?: string }).outbox_id, ref, 'données copiées');
         }

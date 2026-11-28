@@ -265,7 +265,8 @@ describe('6.6 Admin — remboursements, cashouts incertains, créances (trg_cash
             assert.equal(error, null, `créances : ${error?.message}`);
             assert.equal((debts ?? []).length, 1, 'une créance');
             const debtId = String(debts![0].id);
-            const rows = await adminAlert('ADMIN_FINANCE_DEBT', `ADMIN_FINANCE_DEBT:${debtId}:`, 'payments.read', ['EMAIL', 'IN_APP']);
+            // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B9)
+            const rows = await adminAlert('ADMIN_FINANCE_DEBT', `ADMIN_FINANCE_DEBT:${debtId}:`, 'payments.read', ['EMAIL', 'IN_APP', 'PUSH']);
             assert.ok(rows.every((r) => r.template_data.debt_id === debtId), 'template_data.debt_id');
             const sent = await deliverFor(rows, admins['payments.read']);
             const n = await assertInApp(sent, admins['payments.read'], 'Créance sur un compte', [], '/admin/finance#creances');
@@ -285,7 +286,8 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
         const [failed] = await outboxRows({ ids: [row.id] });
         assert.equal(failed.status, 'FAILED', `refus définitif : FAILED (${failed.status} ${failed.reason})`);
         assert.equal(failed.reason, 'SMS_REJECTED', `motif : ${failed.reason}`);
-        const rows = await adminAlert('ADMIN_NOTIFICATION_FAILED', `ADMIN_NOTIFICATION_FAILED:${row.id}:`, 'notifications.read', ['EMAIL', 'IN_APP']); // G.49 (B97) : EMAIL déclaré
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        const rows = await adminAlert('ADMIN_NOTIFICATION_FAILED', `ADMIN_NOTIFICATION_FAILED:${row.id}:`, 'notifications.read', ['EMAIL', 'IN_APP', 'PUSH']); // G.49 (B97) : EMAIL déclaré
         assert.ok(rows.every((r) => r.template_data.outbox_id === row.id), 'template_data.outbox_id');
         assert.equal((await signals('NOTIFICATION_FAILED', row.id)).length, 1, 'un signal NOTIFICATION_FAILED');
         await dispatchAt(new Date(), { ids: [row.id] });
@@ -324,7 +326,8 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
             assert.equal(quiet.error, null, `contrôle d'un jour sans SMS : ${quiet.error?.message}`);
             assert.equal((quiet.data as Row).alerted, false, `jour sans SMS : pas d'alerte (${JSON.stringify(quiet.data)})`);
         });
-        const rows = await adminAlert('ADMIN_SMS_OPTIONAL_80', `ADMIN_SMS_OPTIONAL_80:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP']);
+        // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+        const rows = await adminAlert('ADMIN_SMS_OPTIONAL_80', `ADMIN_SMS_OPTIONAL_80:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP', 'PUSH']);
         const perAdmin = rows.filter((r) => r.recipient_user_id === superadmin.userId);
         assert.equal(perAdmin.length, 2, 'une alerte par canal pour le jour, même après deux contrôles');
         for (const r of perAdmin) {
@@ -344,7 +347,8 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
             const first = await call();
             assert.equal(first.error, null, `notification_admin_alert ${type} : ${first.error?.message} (code ${first.error?.code})`);
             assert.equal((first.data as Row | null)?.ok, true, `réponse : ${JSON.stringify(first.data)}`);
-            const rows = await adminAlert(type, `${type}:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP']); // G.49 (B97) : EMAIL déclaré
+            // Lot « Avis », phase 2 (modification signalée au rapport) : + notification, jamais de SMS (B10, D4)
+            const rows = await adminAlert(type, `${type}:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP', 'PUSH']); // G.49 (B97) : EMAIL déclaré
             const second = await call();
             assert.equal(second.error, null, `second appel : ${second.error?.message}`);
             assert.equal((await outboxRows({ type, keyPrefix: `${type}:${day}:` })).length, rows.length, `${type} : second appel du jour sans doublon`);

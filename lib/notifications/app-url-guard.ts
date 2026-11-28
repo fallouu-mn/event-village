@@ -5,7 +5,8 @@
  * 27 caractères (https://app.eventvillage.sn, contrat G3) : six SMS font alors 160 caractères pile au pire cas. Une adresse
  * plus longue en ferait passer en deux SMS (deux fois facturés, parfois coupés). En production, le serveur refuse donc de
  * démarrer avec une adresse plus longue (instrumentation.ts), avec un message pour l'exploitant.
- * Exemption : essai local par tunnel (EV_DEV_TUNNEL_URL posée, docs/essai-local.md), dont l'adresse est forcément longue.
+ * Exemption : essai local par tunnel (EV_DEV_TUNNEL_URL posée, ou adresse d'un tunnel Cloudflare *.trycloudflare.com,
+ * docs/essai-local.md section 9), dont l'adresse est forcément longue ; une production n'utilise jamais ce domaine.
  */
 
 /** Longueur maximale de NEXT_PUBLIC_APP_URL, « / » final retiré (contrat G3 des SMS). */
@@ -16,6 +17,7 @@ export function appUrlStartupProblem(env: Record<string, string | undefined>): s
     if (env.NODE_ENV !== 'production') return null;
     if (env.EV_DEV_TUNNEL_URL && env.EV_DEV_TUNNEL_URL.trim() !== '') return null;
     const url = (env.NEXT_PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
+    if (/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(url)) return null;
     if (url.length <= APP_URL_MAX_LENGTH) return null;
     return `[démarrage] Refus de démarrer : l'adresse de l'application (NEXT_PUBLIC_APP_URL) fait ${url.length} caractères, ${APP_URL_MAX_LENGTH} au plus. `
         + 'Chaque SMS contient ce lien : plus long, certains SMS partiraient en deux messages (facturés deux fois). '

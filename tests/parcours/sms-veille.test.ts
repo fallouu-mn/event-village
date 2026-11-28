@@ -145,7 +145,8 @@ async function assertAlert(v: VeilleEvent, r: Row, exp: { planned: number; cap: 
         { day: v.tomorrow, ...exp, alerted: true }, `${what} : prévision (${JSON.stringify(f)})`);
     const rows = await forecastRows(v.tomorrow);
     const mine = rows.filter((x) => x.recipient_user_id === admin.userId);
-    assert.deepEqual(mine.map((x) => x.channel).sort(), ['EMAIL', 'IN_APP'], `${what} : une alerte par canal pour l'admin notifications.read (${JSON.stringify(mine.map((x) => x.idempotency_key))})`);
+    // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
+    assert.deepEqual(mine.map((x) => x.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `${what} : une alerte par canal pour l'admin notifications.read (${JSON.stringify(mine.map((x) => x.idempotency_key))})`);
     for (const x of mine) {
         assert.equal(x.idempotency_key, `ADMIN_SMS_FORECAST:${v.tomorrow}:${admin.userId}:${x.channel}`, `${what} : clé par jour et par admin`);
         assert.equal(x.family, 'ESSENTIAL', `${what} : famille ESSENTIAL`);
