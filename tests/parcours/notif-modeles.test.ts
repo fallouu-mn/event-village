@@ -1120,8 +1120,10 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             // 2f, 2g, D8 : SMS nouveaux
             ['REFERRAL_AVAILABLE', {}, [],
                 `Event Village : 4 500 F CFA de commissions de parrainage sont disponibles. Retirez-les : ${U}/wallet`],
+            // Correctifs après contre-vérification du lot « Avis », phase 2 (modification signalée au rapport) : observation 4, même lien que la cloche
+            // (page de l'événement) ; le nom de l'événement laisse la place au lien
             ['PAYMENT_NOT_COMPLETED', {}, [],
-                `Event Village : paiement non abouti pour Gala de la Teranga. Rien n'a été débité. Réessayez : ${U}/tickets`],
+                `Event Village : paiement non abouti, rien n'a été débité. Réessayez : ${U}/events/${EVENT_ID}`],
             ['PAYMENT_NOT_COMPLETED', {target: 'ORDER', order_id: '7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01', order_number: 'CMD-261205-A1B2'}, NO_EVENT_KEYS,
                 `Event Village : paiement non abouti pour la commande CMD-261205-A1B2. Rien n'a été débité. Réessayez : ${U}/orders`],
             ['PAYMENT_NOT_COMPLETED', {target: 'HALL_RESERVATION'}, NO_EVENT_KEYS,

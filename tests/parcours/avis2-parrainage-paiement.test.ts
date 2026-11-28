@@ -4,8 +4,9 @@
  *  2f. Filleul inscrit : cloche et notification au parrain, jamais le nom ni le numéro du filleul. Contrôle du jour (9 h,
  *      heure de Dakar) : commissions gagnées la veille (cloche et notification) et commissions devenues disponibles (quatre
  *      canaux), une fois chacune (le contrôle relancé n'ajoute rien) ; commission annulée jamais annoncée.
- *  2g. Paiement de billets échoué : SMS, notification et cloche, dus 10 minutes plus tard ; second échec du même panier : rien
- *      de plus (une fois par panier) ; un paiement du même panier réussit : l'avis encore en attente est annulé.
+ *  2g. Paiement de billets échoué : SMS, notification et cloche, dus à la fin du délai de grâce de SamirPay (2 h après la
+ *      création du paiement, correctif T2 ; avant : 10 minutes) ; second échec du même panier : rien de plus (une fois par
+ *      panier) ; un paiement du même panier réussit : l'avis encore en attente est annulé.
  *  D8. Anonymisation d'un compte par l'équipe : SMS au numéro et email à l'adresse vérifiée, envoyés avant l'effacement.
  */
 import '../helpers/env';
@@ -67,6 +68,16 @@ describe('2f — parrainage', () => {
         assert.equal(e1, null, e1?.message);
         const { error: e2 } = await service.from('referral_commissions').update({ status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancellation_reason: 'Remboursement (test avis 2f)' }).eq('id', cancelled.id);
         assert.equal(e2, null, e2?.message);
+        // Correctifs après contre-vérification du lot « Avis », phase 2 (modification signalée au rapport) : T3, le montant annoncé est borné par le
+        // retirable du compte de parrainage (grand livre, lu à l'heure réelle) : écritures du parrain rendues disponibles, remises
+        // à la fin (avant : la commission seule suffisait)
+        const { data: ledger, error: lErr } = await service.from('finance_ledger').select('id, available_at').eq('owner_id', sponsor.userId).eq('account_kind', 'PARRAINAGE');
+        assert.equal(lErr, null, lErr?.message);
+        assert.ok((ledger ?? []).length >= 2, `écritures des commissions au grand livre : ${JSON.stringify(ledger)}`);
+        for (const l of ledger ?? []) {
+            const { error: e3 } = await service.from('finance_ledger').update({ available_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', l.id);
+            assert.equal(e3, null, e3?.message);
+        }
         try {
             for (let i = 0; i < 2; i += 1) {
                 const { data, error: dErr } = await service.rpc('notification_daily_checks', { p: { now: now.toISOString() } });
@@ -81,6 +92,10 @@ describe('2f — parrainage', () => {
                     available_at: c.available_at, status: c.status, cancelled_at: c.cancelled_at, cancellation_reason: c.cancellation_reason,
                 }).eq('id', c.id);
                 assert.equal(rErr, null, rErr?.message);
+            }
+            for (const l of ledger ?? []) {
+                const { error: e4 } = await service.from('finance_ledger').update({ available_at: l.available_at }).eq('id', l.id);
+                assert.equal(e4, null, `grand livre remis : ${e4?.message}`);
             }
         }
         const earned = await outboxRows({ type: 'REFERRAL_EARNED', userId: sponsor.userId });
@@ -97,7 +112,7 @@ describe('2f — parrainage', () => {
 });
 
 describe('2g — paiement non abouti', () => {
-    test('échec : SMS, notification, cloche à 10 minutes ; second échec du panier : rien de plus ; panier payé : avis annulé', async () => {
+    test('échec : SMS, notification, cloche à la fin du délai de grâce ; second échec du panier : rien de plus ; panier payé : avis annulé', async () => {
         const ev = await createSaleEvent('avis2-echec', [{ name: 'Standard', price: 5_000, total: 30 }]);
         const buyer = await newBuyer('avis2-echec');
         const items: Array<[string, number]> = [[ev.categories.Standard.id, 2]];
@@ -112,10 +127,16 @@ describe('2g — paiement non abouti', () => {
         await failOnce();
         let rows = await outboxRows({ type: 'PAYMENT_NOT_COMPLETED', userId: buyer.userId });
         assert.deepEqual(channels(rows), ['IN_APP', 'PUSH', 'SMS'], `sans email (D1) : ${describeRows(rows)}`);
-        const delay = Date.parse(rows[0].due_at) - Date.parse(rows[0].created_at);
-        assert.ok(delay >= 9 * 60_000 && delay <= 11 * 60_000, `dû 10 minutes plus tard : ${delay} ms`);
+        // Correctifs après contre-vérification du lot « Avis », phase 2 (modification signalée au rapport) : T2, échéance à la fin du délai de grâce
+        // (avant : 9 à 11 minutes après la mise en file)
+        const firstPay = await paymentById(String(rows[0].template_data.payment_id)) as unknown as { created_at: string };
+        for (const r of rows) {
+            assert.ok(Date.parse(r.due_at) >= Date.parse(firstPay.created_at) + 2 * 3_600_000 - 1_000, `dû 2 h après la création du paiement (${r.channel} : ${r.due_at})`);
+            assert.ok(Date.parse(r.due_at) >= Date.parse(r.created_at) + 9 * 60_000, `jamais moins de 10 minutes après l'échec (${r.channel})`);
+        }
         const sms = renderNotification('PAYMENT_NOT_COMPLETED', 'SMS', rows.find((r) => r.channel === 'SMS')!.template_data, CTX);
-        assert.match(sms.channel === 'SMS' ? sms.text : '', /^Event Village : paiement non abouti pour .+\. Rien n'a été débité\. Réessayez : https:\/\/app\.eventvillage\.sn\/tickets$/);
+        // Correctifs après contre-vérification du lot « Avis », phase 2 (modification signalée au rapport) : observation 4, même lien que la cloche (avant : /tickets)
+        assert.equal(sms.channel === 'SMS' && sms.text, `Event Village : paiement non abouti, rien n'a été débité. Réessayez : https://app.eventvillage.sn/events/${ev.eventId}`);
         const app = renderNotification('PAYMENT_NOT_COMPLETED', 'IN_APP', rows.find((r) => r.channel === 'IN_APP')!.template_data, CTX);
         assert.equal(app.channel === 'IN_APP' && app.actionUrl, `/events/${ev.eventId}`, 'la cloche mène à l’événement');
 

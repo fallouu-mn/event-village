@@ -39,6 +39,8 @@ const WORST: Array<[string, string, Record<string, unknown>]> = [
     ['B6 livreur invité', 'ORDER_COURIER_INVITED', { partner_name: LONG }],
     ['B8 validations avec produits (cinq parties)', 'ADMIN_REVIEW_SMS', { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99, product_count: 99, company: null }],
     ['B8 produits seuls', 'ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 0, product_count: 999, company: null }],
+    // Correctifs après contre-vérification (observation 3, ajout signalé) : trois rubriques, « A, B et C »
+    ['B8 validations, trois rubriques', 'ADMIN_REVIEW_SMS', { partner_count: 999, event_count: 999, venue_count: 0, hall_count: 0, hall_changed_count: 0, product_count: 999, company: null }],
     ['B9 argent à vérifier (quatre parties à 99)', 'ADMIN_MONEY_SMS', { resume_count: 99, uncertain_count: 99, duplicate_count: 99, debt_count: 99 }],
     ['B9 argent à vérifier (quatre parties à 999)', 'ADMIN_MONEY_SMS', { resume_count: 999, uncertain_count: 999, duplicate_count: 999, debt_count: 999 }],
     ['C1 écart de caisse (prénom et initiale)', 'SHIFT_DISCREPANCY', { title: LONG, controller_name: LONG_NAME, difference: -9_999_999 }],

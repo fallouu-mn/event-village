@@ -28,6 +28,8 @@ const FILES = [
     '20261230000004_avis_admins.sql',
     '20261230000005_avis_parrainage_paiement.sql',
     '20261230000006_avis_mots.sql',
+    // Correctifs après contre-vérification (modification signalée au rapport) : migration 07 (T4, anonymisation)
+    '20261230000007_avis_cv_anonymisation.sql',
 ];
 
 /** Recopies du lot : fonction → dernière définition de main (fichier, première et dernière ligne) et migration du lot. */
@@ -44,6 +46,8 @@ const RECOPIES: Record<string, { from: string; lines: [number, number]; in: stri
     'private.order_refund_blocked_notify': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [469, 503], in: FILES[3] },
     'public.notification_daily_checks': { from: '20261125000003_f4_ventes.sql', lines: [382, 564], in: FILES[4] },
     'public.cashouts_simulation_guard': { from: '20261106000002_lot8_essai.sql', lines: [110, 127], in: FILES[5] },
+    // Correctifs après contre-vérification (modification signalée au rapport) : garde de la boîte d'envoi (T4)
+    'public.notification_outbox_guard': { from: '20261103000002_lot6_outbox.sql', lines: [233, 260], in: FILES[6] },
 };
 
 /** Lignes de la dernière définition remplacées exprès (→ ligne qui la remplace dans la recopie), une par une, justifiées. */
@@ -65,6 +69,8 @@ const NEW_FUNCTIONS = [
     'private.notif_admin_money_sms', 'private.notif_admin_money_on_alert',
     // 2f, 2g : déclencheurs nouveaux (filleul inscrit, paiement non abouti) et clé du panier
     'private.notif_referral_signup', 'private.payment_cart_key', 'private.notif_payment_not_completed', 'private.notif_payment_cart_paid',
+    // Correctifs après contre-vérification (modification signalée au rapport) : boîte d'envoi d'un compte anonymisé (T4, rôle de service seulement)
+    'public.notification_outbox_anonymize',
 ];
 
 /** Jamais redéfinies par le lot : livreurs (12d), recopies suivies par les audits (accord requis). */
