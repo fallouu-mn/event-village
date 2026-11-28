@@ -496,6 +496,9 @@ function variants(type: string, base: Data): Data[] {
         // Lot « Avis », phase 2 (2d, ajout signalé) : produits à vérifier, seuls puis avec tout le reste
         dataFrom(base, { partner_count: 0, event_count: 0, product_count: 99 }, ['company']),
         dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99, product_count: 99 }, ['company'])];
+    // Lot « Avis », phase 2 (2g, ajout signalé) : paiement non abouti, chaque objet payé (titre long pour les billets)
+    if (type === 'PAYMENT_NOT_COMPLETED') return [base, ...['ORDER', 'HALL_RESERVATION', 'TABLE_RESERVATION', 'SUBSCRIPTION', 'AUTRE']
+        .map((target) => dataFrom(base, { target, order_id: EVENT_ID, order_number: 'CMD-261205-A1B2C3D4E5F6' }, NO_EVENT_KEYS))];
     // Lot « Avis », phase 2 (2d, ajout signalé) : argent à vérifier, quatre parties au pire cas, puis une seule
     if (type === 'ADMIN_MONEY_SMS') return [dataFrom(base, { resume_count: 99, uncertain_count: 99, duplicate_count: 99, debt_count: 99 }),
         dataFrom(base, { resume_count: 999, uncertain_count: 999, duplicate_count: 999, debt_count: 999 }), dataFrom(base, { resume_count: 99, uncertain_count: 0, duplicate_count: 0, debt_count: 0 })];
@@ -1114,6 +1117,21 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : paiement de 15 000 F CFA confirmé. Merci. ${U}/orders`],
             ['ORDER_COURIER_INVITED', {partner_name: 'Chez Fatou'}, [],
                 `Event Village : Chez Fatou vous invite à livrer ses commandes. Répondez : ${U}/courier/invitations`],
+            // 2f, 2g, D8 : SMS nouveaux
+            ['REFERRAL_AVAILABLE', {}, [],
+                `Event Village : 4 500 F CFA de commissions de parrainage sont disponibles. Retirez-les : ${U}/wallet`],
+            ['PAYMENT_NOT_COMPLETED', {}, [],
+                `Event Village : paiement non abouti pour Gala de la Teranga. Rien n'a été débité. Réessayez : ${U}/tickets`],
+            ['PAYMENT_NOT_COMPLETED', {target: 'ORDER', order_id: '7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01', order_number: 'CMD-261205-A1B2'}, NO_EVENT_KEYS,
+                `Event Village : paiement non abouti pour la commande CMD-261205-A1B2. Rien n'a été débité. Réessayez : ${U}/orders`],
+            ['PAYMENT_NOT_COMPLETED', {target: 'HALL_RESERVATION'}, NO_EVENT_KEYS,
+                `Event Village : paiement non abouti pour votre réservation de salle. Rien n'a été débité. Réessayez : ${U}/halls/reservations`],
+            ['PAYMENT_NOT_COMPLETED', {target: 'TABLE_RESERVATION'}, NO_EVENT_KEYS,
+                `Event Village : paiement non abouti pour votre réservation de table. Rien n'a été débité. Réessayez : ${U}/tables/reservations`],
+            ['PAYMENT_NOT_COMPLETED', {target: 'SUBSCRIPTION'}, NO_EVENT_KEYS,
+                `Event Village : paiement non abouti pour votre abonnement. Rien n'a été débité. Réessayez : ${U}/partner/subscription`],
+            ['ACCOUNT_ANONYMIZATION_NOTICE', {}, [],
+                `Event Village : votre compte est supprimé par l'équipe, vos informations personnelles vont être effacées. Une question : ${U}/aide`],
             // 2d : SMS regroupés des administrateurs (B8, B9)
             ['ADMIN_MONEY_SMS', {}, [],
                 `Event Village : argent à vérifier : 2 versements à reprendre, 1 incertain, 1 double paiement, 1 créance. ${U}/admin/finance`],
@@ -1620,6 +1638,12 @@ function avisPhase2Expected(): ExpectedType[] {
         ess('ACCOUNT_WELCOME', [I, P], 'CLIENT', 'B', 'WELCOME', ['/'], 'Bienvenue sur Event Village'),
         // 2d (migration 20261230000004) : SMS regroupé « argent à vérifier » des administrateurs (SMS seul, comme ADMIN_REVIEW_SMS)
         ess('ADMIN_MONEY_SMS', [S], 'ADMIN', 'B', null, ['/admin/finance'], null),
+        // 2f, 2g, D8 (migration 20261230000005) : parrainage (D2), paiement non abouti (D1, sans email), avis avant l'anonymisation (D8)
+        ess('REFERRAL_SIGNUP', [I, P], 'CLIENT', 'B', 'REFERRAL', ['/wallet'], 'Nouveau filleul'),
+        ess('REFERRAL_EARNED', [I, P], 'CLIENT', 'B', 'REFERRAL', ['/wallet'], 'Commissions de la veille'),
+        ess('REFERRAL_AVAILABLE', [I, S, M, P], 'CLIENT', 'B', 'REFERRAL', ['/wallet'], 'Commissions disponibles'),
+        ess('PAYMENT_NOT_COMPLETED', [I, S, P], 'ANY', 'B', 'PAYMENT', ['/events/:event'], 'Paiement non abouti'),
+        ess('ACCOUNT_ANONYMIZATION_NOTICE', [S, M], 'ANY', 'A', null, ['/aide'], null),
     ];
 }
 

@@ -432,6 +432,50 @@ const withdrawalPath = (d: object): string => {
 /** Avis phase 2 (A2) : destination d'un retrait demandé, jamais le code (virement : le compte bancaire). */
 const withdrawalTarget = (d: object): string => (optText(d, 'method') === 'BANK' ? 'votre compte bancaire' : operatorLabel(field(d, 'operator')));
 const withdrawalTargetSms = (d: object): string => (optText(d, 'method') === 'BANK' ? 'votre banque' : operatorLabel(field(d, 'operator')));
+/** Avis phase 2 (D1) : où réessayer un paiement non abouti (événement, commande, réservation, abonnement). */
+function paymentRetryPath(d: object): string {
+    switch (optText(d, 'target')) {
+        case 'TICKET': return optText(d, 'event_id') ? `/events/${ident(d, 'event_id')}` : '/explore';
+        case 'ORDER': return optText(d, 'order_id') ? `/orders/${ident(d, 'order_id')}` : '/orders';
+        case 'HALL_RESERVATION': return optText(d, 'reservation_id') ? `/halls/reservations/${ident(d, 'reservation_id')}` : '/halls/reservations';
+        case 'TABLE_RESERVATION': return optText(d, 'reservation_id') ? `/tables/reservations/${ident(d, 'reservation_id')}` : '/tables/reservations';
+        case 'SUBSCRIPTION': return '/partner/subscription';
+        default: return '/';
+    }
+}
+/** Lien court du SMS (l'identifiant ne tient pas dans un segment). */
+function paymentRetrySmsPath(d: object): string {
+    switch (optText(d, 'target')) {
+        case 'ORDER': return '/orders';
+        case 'HALL_RESERVATION': return '/halls/reservations';
+        case 'TABLE_RESERVATION': return '/tables/reservations';
+        case 'SUBSCRIPTION': return '/partner/subscription';
+        default: return '/tickets';
+    }
+}
+function paymentNotCompletedText(d: object): string {
+    switch (optText(d, 'target')) {
+        case 'TICKET': return `Le paiement pour ${q(text(d, 'title'))} n'a pas abouti. Rien n'a été débité et les places ne sont plus réservées. Vous pouvez réessayer.`;
+        case 'ORDER': {
+            const number = optText(d, 'order_number');
+            return `Le paiement ${number ? `de la commande ${number}` : 'de votre commande'} n'a pas abouti. Rien n'a été débité. Vous pouvez réessayer.`;
+        }
+        case 'HALL_RESERVATION': return 'Le paiement de votre réservation de salle n\'a pas abouti. Rien n\'a été débité. Vous pouvez réessayer.';
+        case 'TABLE_RESERVATION': return 'Le paiement de votre réservation de table n\'a pas abouti. Rien n\'a été débité. Vous pouvez réessayer.';
+        case 'SUBSCRIPTION': return 'Le paiement de votre abonnement n\'a pas abouti. Rien n\'a été débité. Vous pouvez réessayer.';
+        default: return 'Votre paiement n\'a pas abouti. Rien n\'a été débité. Vous pouvez réessayer.';
+    }
+}
+function paymentNotCompletedSms(d: object): string {
+    switch (optText(d, 'target')) {
+        case 'TICKET': return `pour ${smsVar(text(d, 'title'), 30)}`;
+        case 'ORDER': return optText(d, 'order_number') ? `pour la commande ${smsVar(text(d, 'order_number'), 20)}` : 'pour votre commande';
+        case 'HALL_RESERVATION': return 'pour votre réservation de salle';
+        case 'TABLE_RESERVATION': return 'pour votre réservation de table';
+        case 'SUBSCRIPTION': return 'pour votre abonnement';
+        default: return 'de votre paiement';
+    }
+}
 /** Finition 5 : les billets du compte pour un événement (achat, invitation, rappel, annulation, remboursement) ; sans
  * événement dans les données (ligne ancienne), l'historique : un lien ne fait jamais échouer l'envoi d'un avis. */
 const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tickets/${ident(d, 'event_id')}` : '/tickets?tab=historique');
@@ -3159,6 +3203,62 @@ const CATALOG = {
         label: 'Bienvenue après l’inscription', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'WELCOME', night: 'DEFER',
         link: () => '/',
         inApp: () => ({ title: 'Bienvenue sur Event Village', content: 'Votre compte est prêt. Retrouvez vos billets, réservations et commandes ici.' }),
+        sample: {},
+    }),
+
+    // ── Lot « Avis », phase 2 (2f, 2g, D8 ; migration 20261230000005) ──
+    // D2 : filleul inscrit (petite étape, jamais le nom ni le numéro du filleul).
+    REFERRAL_SIGNUP: define('REFERRAL_SIGNUP', {
+        label: 'Nouveau filleul', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'REFERRAL', night: 'DEFER',
+        link: () => '/wallet',
+        inApp: () => ({ title: 'Nouveau filleul', content: 'Une personne s\'est inscrite avec votre code de parrainage. Vous gagnerez une commission sur ses achats.' }),
+        sample: {},
+    }),
+    // D2 : commissions gagnées la veille, regroupées une fois par jour à 9 h (petite étape).
+    REFERRAL_EARNED: define('REFERRAL_EARNED', {
+        label: 'Commissions de parrainage de la veille', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'REFERRAL', night: 'DEFER',
+        link: () => '/wallet',
+        inApp: (d) => {
+            const n = count(d, 'count');
+            const days = count(d, 'days');
+            return {
+                title: 'Commissions de la veille',
+                content: n > 1
+                    ? `Hier, vous avez gagné ${n} commissions, ${money(d, 'amount')} en tout. Elles seront disponibles dans ${plural(days, 'jour', 'jours')}.`
+                    : `Hier, vous avez gagné une commission de ${money(d, 'amount')}. Elle sera disponible dans ${plural(days, 'jour', 'jours')}.`,
+            };
+        },
+        sample: { day: '2026-11-13', count: 3, amount: 4_500, days: 7 },
+    }),
+    // D2 : commissions devenues disponibles (étape importante, regroupées par jour, parties à 9 h).
+    REFERRAL_AVAILABLE: define('REFERRAL_AVAILABLE', {
+        label: 'Commissions de parrainage disponibles', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'REFERRAL', night: 'DEFER',
+        link: () => '/wallet',
+        inApp: (d) => ({ title: 'Commissions disponibles', content: `${money(d, 'amount')} de commissions de parrainage peuvent maintenant être retirés.` }),
+        sms: (d, ctx) => `${SMS_PREFIX}${smsAmount(num(d, 'amount'))} de commissions de parrainage sont disponibles. Retirez-les : ${appLink(ctx, '/wallet')}`,
+        emailBlocks: () => ({ ctaLabel: 'Retirer mes commissions' }),
+        sample: { day: '2026-11-14', amount: 4_500 },
+    }),
+    // D1 : paiement non abouti (échoué ou expiré), une fois par panier, jamais si un autre paiement du panier a réussi ;
+    // SMS, notification et cloche, sans email (décision du 27/11).
+    PAYMENT_NOT_COMPLETED: define('PAYMENT_NOT_COMPLETED', {
+        label: 'Paiement non abouti', channels: ['IN_APP', 'SMS', 'PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'PAYMENT', night: 'DEFER',
+        link: paymentRetryPath,
+        inApp: (d) => ({ title: 'Paiement non abouti', content: paymentNotCompletedText(d) }),
+        sms: (d, ctx) => `${SMS_PREFIX}paiement non abouti ${paymentNotCompletedSms(d)}. Rien n'a été débité. Réessayez : ${appLink(ctx, paymentRetrySmsPath(d))}`,
+        sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, target: 'TICKET', amount: 15_000 },
+    }),
+    // D8 : juste avant l'anonymisation d'un compte par l'équipe (SMS et email, envoyés tout de suite ; aucune cloche : le compte
+    // est effacé).
+    ACCOUNT_ANONYMIZATION_NOTICE: define('ACCOUNT_ANONYMIZATION_NOTICE', {
+        label: 'Compte supprimé par l’équipe (avis avant l’effacement)', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null,
+        link: () => '/aide',
+        inApp: () => ({
+            title: 'Votre compte est supprimé',
+            content: 'L\'équipe Event Village supprime votre compte : votre nom, votre numéro et votre adresse vont être effacés. Les paiements passés restent dans les registres comptables, sans votre nom. Pour toute question, ouvrez la page Aide.',
+        }),
+        sms: (_d, ctx) => `${SMS_PREFIX}votre compte est supprimé par l'équipe, vos informations personnelles vont être effacées. Une question : ${appLink(ctx, '/aide')}`,
+        emailBlocks: () => ({ ctaLabel: 'Ouvrir la page Aide' }),
         sample: {},
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),

@@ -241,6 +241,12 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ACCOUNT_WELCOME: 'Bienvenue après l’inscription',
     // Lot « Avis », phase 2 (2d)
     ADMIN_MONEY_SMS: 'SMS : argent à vérifier',
+    // Lot « Avis », phase 2 (2f, 2g, D8)
+    REFERRAL_SIGNUP: 'Nouveau filleul',
+    REFERRAL_EARNED: 'Commissions de parrainage de la veille',
+    REFERRAL_AVAILABLE: 'Commissions de parrainage disponibles',
+    PAYMENT_NOT_COMPLETED: 'Paiement non abouti',
+    ACCOUNT_ANONYMIZATION_NOTICE: 'Compte supprimé par l’équipe (avis avant l’effacement)',
     ADMIN_PARTNER_REGISTERED: 'Nouvelle candidature partenaire',
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
     ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',

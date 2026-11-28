@@ -320,6 +320,12 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ACCOUNT_WELCOME', [I, P], 'CLIENT', 'B'),
     // Lot « Avis », phase 2 (2d, migration 20261230000004) : SMS regroupé « argent à vérifier » (ajout signalé)
     ess('ADMIN_MONEY_SMS', [S], 'ADMIN', 'B'),
+    // Lot « Avis », phase 2 (2f, 2g, D8 ; migration 20261230000005) : types nouveaux (ajout signalé)
+    ess('REFERRAL_SIGNUP', [I, P], 'CLIENT', 'B'),
+    ess('REFERRAL_EARNED', [I, P], 'CLIENT', 'B'),
+    ess('REFERRAL_AVAILABLE', [I, S, M, P], 'CLIENT', 'B'),
+    ess('PAYMENT_NOT_COMPLETED', [I, S, P], 'ANY', 'B'),
+    ess('ACCOUNT_ANONYMIZATION_NOTICE', [S, M], 'ANY', 'A'),
     sync('OTP_ADMIN_PHONE'),
     sync('ORDER_HANDOVER_CODE'), // lot 12a (ajout signalé)
 ];

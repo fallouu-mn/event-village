@@ -2,6 +2,8 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { isTechnicalAddress } from '@/lib/notifications/channels';
+import { dispatchNotifications } from '@/lib/notifications/dispatcher';
+import { toSenegaleseE164 } from '@/lib/validations/auth';
 
 export interface FinancialReconciliationItem {
     paymentId: string;
@@ -322,6 +324,36 @@ export class AdminService {
      * Conserve STRICTEMENT l'intégrité financière (orders, tickets, controller_shifts, payments)
      * Libère l'email et le téléphone côté Auth, bannit le compte et efface l'identité publique.
      */
+    /**
+     * Lot « Avis », phase 2 (D8) : avis ACCOUNT_ANONYMIZATION_NOTICE (SMS au numéro du compte, email à l'adresse vérifiée) mis
+     * en file puis envoyé tout de suite (envoyeur limité à ces lignes), avant l'effacement. Le numéro est écrit dans la ligne :
+     * une reprise après l'effacement vise encore l'ancien numéro. Échecs journalisés, jamais levés.
+     */
+    private static async noticeBeforeAnonymization(userId: string, phone: unknown): Promise<void> {
+        const supabase = getServiceRoleClient();
+        const key = `ACCOUNT_ANONYMIZATION_NOTICE:${userId}:${Date.now()}`;
+        const p: Record<string, unknown> = { type: 'ACCOUNT_ANONYMIZATION_NOTICE', key, user_id: userId, data: {} };
+        const e164 = typeof phone === 'string' ? toSenegaleseE164(phone) : null;
+        if (e164) p.phone = e164;
+        const { error } = await supabase.rpc('notif_enqueue', { p });
+        if (error) {
+            console.error(`[AdminService] avis avant l'anonymisation du compte ${userId} non mis en file :`, error.message);
+            return;
+        }
+        const { data: rows, error: rowsErr } = await supabase.from('notification_outbox').select('id').eq('group_key', key).eq('status', 'PENDING');
+        if (rowsErr) {
+            console.error(`[AdminService] avis avant l'anonymisation du compte ${userId} : lignes illisibles :`, rowsErr.message);
+            return;
+        }
+        const ids = (rows ?? []).map((r) => String(r.id));
+        if (ids.length === 0) return;
+        try {
+            await dispatchNotifications({ onlyIds: ids });
+        } catch (err) {
+            console.error(`[AdminService] avis avant l'anonymisation du compte ${userId} non envoyé tout de suite :`, err instanceof Error ? err.message : String(err));
+        }
+    }
+
     static async anonymizeUser(targetUserId: string, actor: { id: string; role: string }): Promise<{ success: boolean; message: string }> {
         const supabase = getServiceRoleClient();
 
@@ -352,6 +384,10 @@ export class AdminService {
         if (targetRoles.some((r) => ['SUPERADMIN', 'ADMIN', 'PARTENAIRE'].includes(r)) && !actorRoles.includes('SUPERADMIN')) {
             throw new PublicError('Seul un super-administrateur peut supprimer un compte administrateur ou partenaire.', 'SUPERADMIN_REQUIRED', 403);
         }
+
+        // Lot « Avis », phase 2 (D8, décision du 27/11) : SMS et email juste avant l'effacement (le numéro et l'adresse vont
+        // disparaître) ; un échec est journalisé et n'empêche pas l'anonymisation décidée par l'équipe.
+        if (targetUser) await AdminService.noticeBeforeAnonymization(targetUserId, targetUser.phone);
 
         // Lot 9 quater (A9 : AUD-33) : journal d'audit pseudonymisé AVANT l'effacement du profil (valeurs d'origine) :
         // numéros (forme à 9 chiffres), nom, prénom et adresse réelle remplacés par « [anonymisé] ».

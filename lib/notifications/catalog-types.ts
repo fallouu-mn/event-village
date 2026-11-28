@@ -376,6 +376,14 @@ export interface TemplateData {
     // ── Lot « Avis », phase 2 (2d, migration 20261230000004) ──
     /** B9 : SMS regroupé « argent à vérifier » (compteurs par nature, refs = alertes déjà comptées). */
     ADMIN_MONEY_SMS: { resume_count?: number; uncertain_count?: number; duplicate_count?: number; debt_count?: number; refs?: string[] };
+    // ── Lot « Avis », phase 2 (2f, 2g, D8 ; migration 20261230000005) ──
+    REFERRAL_SIGNUP: Record<string, never>;
+    /** D2 : commissions gagnées la veille (day), count, amount, days = délai avant disponibilité. */
+    REFERRAL_EARNED: { day: string; count: number; amount: number; days: number };
+    REFERRAL_AVAILABLE: { day: string; amount: number };
+    /** D1 : target = TICKET | ORDER | HALL_RESERVATION | TABLE_RESERVATION | SUBSCRIPTION ; données de l'objet payé. */
+    PAYMENT_NOT_COMPLETED: Partial<EventData> & { payment_id: string; target: string; amount: number; order_id?: string; order_number?: string; reservation_id?: string };
+    ACCOUNT_ANONYMIZATION_NOTICE: Record<string, never>;
 }
 
 export type NotificationType = keyof TemplateData;

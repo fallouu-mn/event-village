@@ -26,6 +26,7 @@ const FILES = [
     '20261230000002_avis_nouveaux_simples.sql',
     '20261230000003_avis_canaux.sql',
     '20261230000004_avis_admins.sql',
+    '20261230000005_avis_parrainage_paiement.sql',
 ];
 
 /** Recopies du lot : fonction → dernière définition de main (fichier, première et dernière ligne) et migration du lot. */
@@ -39,6 +40,7 @@ const RECOPIES: Record<string, { from: string; lines: [number, number]; in: stri
     'private.order_product_review_notify': { from: '20261224000001_l12c_verification.sql', lines: [441, 467], in: FILES[3] },
     'private.order_review_batch_done': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [54, 75], in: FILES[3] },
     'private.order_refund_blocked_notify': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [469, 503], in: FILES[3] },
+    'public.notification_daily_checks': { from: '20261125000003_f4_ventes.sql', lines: [382, 564], in: FILES[4] },
 };
 
 /** Fonctions nouvelles du lot. */
@@ -49,6 +51,8 @@ const NEW_FUNCTIONS = [
     'private.notif_controller_post_changed',
     // 2d : SMS regroupé « argent à vérifier » et son déclencheur sur la boîte d'envoi
     'private.notif_admin_money_sms', 'private.notif_admin_money_on_alert',
+    // 2f, 2g : déclencheurs nouveaux (filleul inscrit, paiement non abouti) et clé du panier
+    'private.notif_referral_signup', 'private.payment_cart_key', 'private.notif_payment_not_completed', 'private.notif_payment_cart_paid',
 ];
 
 /** Jamais redéfinies par le lot : livreurs (12d), recopies suivies par les audits (accord requis). */
