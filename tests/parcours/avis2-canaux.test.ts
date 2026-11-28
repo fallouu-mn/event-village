@@ -94,6 +94,26 @@ describe('2a.2 — B2 : numéro changé par le profil', () => {
     });
 });
 
+describe('2a.4 — B14 : ventes groupées, une seule notification du téléphone par fenêtre de 15 minutes', () => {
+    test('deux ventes dans la fenêtre : une cloche et une notification, chacune avec les deux ventes', async () => {
+        const owner = await newBuyer('avis2-ventes');
+        const eventId = randomUUID();
+        const rows = await inRolledBackTransaction(async (db) => {
+            for (const n of [2, 3]) {
+                await db.query('SELECT public.notif_enqueue_grouped($1::jsonb)', [JSON.stringify({
+                    type: 'NEW_ORDER', scope: `${eventId}:${owner.userId}`, window_minutes: 15, user_id: owner.userId,
+                    data: { ...NOTIFICATION_CATALOG.NEW_ORDER.sample, event_id: eventId }, add: { ticket_count: n, total: n * 5_000, order_count: 1 },
+                })]);
+            }
+            const { rows: r } = await db.query<{ channel: string; template_data: Record<string, unknown> }>(
+                'SELECT channel, template_data FROM public.notification_outbox WHERE recipient_user_id = $1 AND type = $2 ORDER BY channel', [owner.userId, 'NEW_ORDER']);
+            return r;
+        });
+        assert.deepEqual(rows.map((r) => r.channel), ['IN_APP', 'PUSH'], 'une cloche et une notification');
+        for (const r of rows) assert.deepEqual([Number(r.template_data.order_count), Number(r.template_data.ticket_count)], [2, 5], `${r.channel} : les deux ventes`);
+    });
+});
+
 describe('2a.3 — B13 : la suspension ne se coupe plus, la reprise si', () => {
     test('EVENT_UPDATES/SMS coupé : suspension SMS en attente, reprise SKIPPED PREFERENCE_DISABLED', async () => {
         const b = await newBuyer('avis2-pref');
