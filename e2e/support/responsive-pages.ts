@@ -406,6 +406,9 @@ const ADMINISTRATION: Array<Omit<ResponsivePage, 'groupe'>> = [
     // Lot 12c : produits « à vérifier » (app/admin/products ne dépend pas de l'interrupteur des commandes ; file remplie
     // contrôlée et capturée par e2e/lot12c.responsive.spec.ts)
     P({ id: 'adm-produits', titre: 'Produits à vérifier', role: 'fumee-superadmin', path: () => '/admin/products', ready: (p) => titled(p, /^produits à vérifier$/i) }),
+    // Lot 12d : commandes de l'administration (app/admin/orders ne dépend pas de l'interrupteur ; fiche, décision d'absence et
+    // file « À décider » remplie : contrôlées et capturées par e2e/lot12d.responsive.spec.ts)
+    P({ id: 'adm-commandes', titre: 'Commandes', role: 'fumee-superadmin', path: () => '/admin/orders', ready: (p) => titled(p, /^commandes$/i) }),
 ];
 
 const SCANNER: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -456,6 +459,13 @@ export const RESPONSIVE_EXCLUSIONS: Readonly<Record<string, string>> = {
     '/partner/orders/livreurs': 'livreurs de la partenaire : contrôlés et capturés par e2e/lot12c.responsive.spec.ts',
     '/restaurants/[id]/tables': 'tables : redirection vers la fiche de l’établissement (/tables/<id>) ou la recherche (/tables), lot 11b',
     '/t/[code]': 'tables : lien court des SMS, redirection vers la réservation (client ou établissement), lot 11b',
+    // Lot 12d : espace du livreur derrière l'interrupteur des commandes et fiche d'une commande de l'administration,
+    // contrôlés (390 et 1 440 px, 0 défaut bloquant) et capturés en clair et en sombre par e2e/lot12d.responsive.spec.ts,
+    // avec ses propres données (livraisons à chaque étape, client absent, décision de l'équipe), service ouvert le temps du spec
+    '/courier/orders': 'livraisons du jour du livreur : contrôlées et capturées par e2e/lot12d.responsive.spec.ts (service des commandes ouvert le temps du spec)',
+    '/courier/orders/[id]': 'une livraison (prête, en route avec saisie du code et reste en espèces, client absent) : contrôlée et capturée par e2e/lot12d.responsive.spec.ts',
+    '/courier/invitations/[id]': 'invitation à livrer : contrôlée et capturée par e2e/lot12d.responsive.spec.ts',
+    '/admin/orders/[id]': 'fiche d’une commande de l’administration (frise, paiements, décision après une absence) : contrôlée et capturée par e2e/lot12d.responsive.spec.ts',
 };
 
 /** Contexte : caméra simulée posée avant le chargement (scanner démarré). */
