@@ -61,6 +61,13 @@ describe('stabilité — hydratation', () => {
         }
         assert.match(spec, /const THEMES: ThemeKey\[\] = \['clair', 'sombre'\];/);
         assert.match(spec, /LATE_PAGE_CHUNK/);
+        // Groupes de stress (défaut de React n° 418, décision du 28/11 : lot Next 16 à part) : sur demande, jamais retirés
+        assert.match(spec, /const STRESS = process\.env\.EV_HYDRATATION_STRESS === '1';/);
+        assert.equal((spec.match(/test\.skip\(!STRESS, /g) ?? []).length, 3, 'page tardive, rechargements répétés, flux retardé');
+        assert.match(spec, /const TAIL_SCRIPT = /, 'flux retardé');
+        const ci = read('.github/workflows/verify.yml');
+        assert.match(ci, /grep -qE '\^ci-hydratation:\[\[:space:\]\]\*stress\[\[:space:\]\]\*\$'/);
+        assert.match(ci, /EV_HYDRATATION_STRESS: \$\{\{ needs\.mode\.outputs\.hydratation \}\}/);
         assert.match(spec, /\^Rechercher un événement\$/, 'Explorer : un seul champ de recherche');
     });
 });

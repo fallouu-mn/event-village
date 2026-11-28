@@ -67,6 +67,7 @@ jobs:
       responsive: ${{ steps.mode.outputs.responsive }}
       perf: ${{ steps.mode.outputs.perf }}
       captures: ${{ steps.mode.outputs.captures }}
+      hydratation: ${{ steps.mode.outputs.hydratation }}
     steps:
       - name: Horodatage du début du run
         id: t0
@@ -124,6 +125,14 @@ jobs:
             echo "Captures sombres demandées (job responsive)"
           else
             echo "captures=0" >> "$GITHUB_OUTPUT"
+          fi
+          # Lot stabilité (hydratation) : « ci-hydratation: stress » lance aussi, dans le job responsive, les groupes qui
+          # provoquent le défaut de React n° 418 (page tardive, rechargements répétés, flux retardé ; e2e/hydratation.responsive.spec.ts)
+          if printf '%s\n' "$message" | grep -qE '^ci-hydratation:[[:space:]]*stress[[:space:]]*$'; then
+            echo "hydratation=1" >> "$GITHUB_OUTPUT"
+            echo "Groupes de stress de l'hydratation demandés (job responsive)"
+          else
+            echo "hydratation=0" >> "$GITHUB_OUTPUT"
           fi
 
   # ── Mode rapide : inchangé (typecheck, lint, suites citées), sur une base locale ──────────────────────────────────
@@ -717,6 +726,7 @@ jobs:
         timeout-minutes: 40
         env:
           EV_E2E_PHASES: connexion,responsive
+          EV_HYDRATATION_STRESS: ${{ needs.mode.outputs.hydratation }}
         run: |
           . /tmp/etape.sh responsive
           set -o pipefail

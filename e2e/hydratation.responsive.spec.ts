@@ -210,6 +210,13 @@ async function runScenario(browser: Browser, testInfo: TestInfo, theme: ThemeKey
  * effets tournent (session lue, `mounted`, interrupteurs lus par GET /api/features), PUIS la page s'hydrate. Interrupteurs
  * salles et tables ouverts (verrou des services) : une entrée de service n'est rendue que si l'interrupteur est lu.
  */
+/**
+ * Groupes de stress (page tardive, rechargements répétés, flux retardé) : ils provoquent le défaut de React n° 418 de la canary
+ * embarquée par Next 15.5 (rejeu d'un élément suspendu pendant l'hydratation ; corrigé en amont, react #35494, Next 16.4.6) ;
+ * lancés seulement avec EV_HYDRATATION_STRESS=1 (ligne « ci-hydratation: stress » du commit), pour la preuve et pour le lot
+ * Next 16 (décision du 28/11). Les scénarios des hypothèses de la consigne, plus haut, tournent toujours.
+ */
+const STRESS = process.env.EV_HYDRATATION_STRESS === '1';
 const LATE_PAGE_CHUNK = /\/_next\/static\/chunks\/app\/(?!layout-)[^?]+\.js(\?|$)/;
 
 interface LateCase { id: string; role: 'anonyme' | 'organisateur' | 'client'; path: () => string; ready: string }
@@ -232,9 +239,87 @@ const RELOAD_PAGES = LATE_PAGES.filter((p) => p.role !== 'anonyme');
 const RELOAD_DELAYS = [600, 1_200, 2_500] as const;
 const RELOADS = 8;
 
+/**
+ * Flux retardé (relevés du run 796 : écart à la racine ; `$RC` puis `$RV`, la révélation groupée de React 19.2, avaient
+ * déplacé des nœuds AVANT la reprise de l'hydratation). Le document reçu est coupé juste avant le premier bloc différé du
+ * flux (`<div hidden id="S:…">`, contenu d'un Suspense rendu plus tard par le serveur) par un script bloquant servi en
+ * retard : l'analyse du HTML s'arrête là, React démarre l'hydratation sur le début de la page et attend les morceaux de page
+ * (retardés plus longtemps) ; la fin du flux arrive pendant cette attente et révèle les blocs. C'est la course des CI chargées,
+ * rendue certaine. Sans bloc différé dans le document, le cas est noté « sans bloc différé ».
+ */
+const TAIL_SCRIPT = '/__ev-flux-retarde.js';
+const STREAM_CASES: ReadonlyArray<{ tail: number; chunk: number }> = [{ tail: 600, chunk: 2_000 }, { tail: 300, chunk: 0 }];
+
+for (const theme of THEMES) {
+    for (const vp of VIEWPORTS) {
+        test(`hydratation · ${theme} · ${vp.id} px · flux retardé : fin du document après le début de l'hydratation`, async ({ browser }, testInfo) => {
+            test.skip(!STRESS, 'groupe de stress (défaut de React n° 418, lot Next 16) : ligne « ci-hydratation: stress » du commit');
+            test.setTimeout(900_000);
+            const failures: string[] = [];
+            const notes: string[] = [];
+            let loads = 0;
+            for (const lc of LATE_PAGES) {
+                for (const sc of STREAM_CASES) {
+                    const extra = { ...vp.options, timezoneId: BROWSER_TZ };
+                    const context = lc.role === 'anonyme'
+                        ? await openAnonymousContext(browser, testInfo, theme, extra)
+                        : await openRoleContext(browser, testInfo, lc.role, theme, extra);
+                    try {
+                        await installHydrationProbe(context);
+                        let cut = 0;
+                        await context.route((url) => url.pathname === TAIL_SCRIPT, async (route) => {
+                            await new Promise((r) => setTimeout(r, sc.tail));
+                            await route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: '/* fin du flux retardée (e2e) */' });
+                        });
+                        await context.route((url) => url.pathname === new URL(lc.path(), 'http://x').pathname, async (route) => {
+                            if (route.request().resourceType() !== 'document') return route.fallback();
+                            const response = await route.fetch();
+                            const html = await response.text();
+                            const at = html.indexOf('<div hidden id="S:');
+                            if (at < 0) return route.fulfill({ response, body: html });
+                            cut += 1;
+                            const headers = { ...response.headers() };
+                            delete headers['content-length'];
+                            delete headers['content-encoding'];
+                            return route.fulfill({ status: response.status(), headers, body: `${html.slice(0, at)}<script src="${TAIL_SCRIPT}?ms=${sc.tail}"></script>${html.slice(at)}` });
+                        });
+                        if (sc.chunk > 0) {
+                            await context.route(LATE_PAGE_CHUNK, async (route) => {
+                                await new Promise((r) => setTimeout(r, sc.chunk));
+                                await route.fallback();
+                            });
+                        }
+                        const p = await context.newPage();
+                        const watch = watchHydration(p);
+                        for (let passage = 1; passage <= 3; passage += 1) {
+                            const mark = watch.mark();
+                            if (passage === 1) await p.goto(lc.path(), { waitUntil: 'load' });
+                            else await p.reload({ waitUntil: 'load' });
+                            await waitHydrated(p, lc.ready);
+                            loads += 1;
+                            const errors = watch.since(mark);
+                            if (errors.length > 0) {
+                                const report = formatProbe(await readProbe(p));
+                                failures.push(`${theme} · ${vp.id} px · ${lc.id} (${lc.role}) · fin du flux à +${sc.tail} ms, morceaux de page à +${sc.chunk} ms · chargement ${passage}/3 :\n  ${errors.join('\n  ')}${report ? `\n${report}` : ''}`);
+                            }
+                        }
+                        notes.push(`${lc.id} (fin +${sc.tail} ms, morceaux +${sc.chunk} ms) : document coupé ${cut}/3 fois${cut === 0 ? ' (sans bloc différé)' : ''}`);
+                    } finally {
+                        await context.close();
+                    }
+                }
+            }
+            console.log(`[hydratation] flux retardé · ${theme} · ${vp.id} px : ${loads} chargements, ${failures.length} en échec\n  ${notes.join('\n  ')}`);
+            for (const f of failures) console.log(`[hydratation] ÉCHEC ${f}`);
+            expect(failures, `erreurs d'hydratation, flux retardé (${theme}, ${vp.id} px)`).toEqual([]);
+        });
+    }
+}
+
 for (const theme of THEMES) {
     for (const vp of VIEWPORTS) {
         test(`hydratation · ${theme} · ${vp.id} px · rechargements répétés, page tardive : tableau de bord et calendrier de l'organisatrice, commandes du client`, async ({ browser }, testInfo) => {
+            test.skip(!STRESS, 'groupe de stress (défaut de React n° 418, lot Next 16) : ligne « ci-hydratation: stress » du commit');
             test.setTimeout(900_000);
             const failures: string[] = [];
             let loads = 0;
@@ -276,6 +361,7 @@ for (const theme of THEMES) {
 for (const theme of THEMES) {
     for (const vp of VIEWPORTS) {
         test(`hydratation · ${theme} · ${vp.id} px · page tardive, services ouverts : accueil, Explorer, fiche, tableau de bord et calendrier de l'organisatrice, commandes du client`, async ({ browser, servicesLock }, testInfo) => {
+            test.skip(!STRESS, 'groupe de stress (défaut de React n° 418, lot Next 16) : ligne « ci-hydratation: stress » du commit');
             test.setTimeout(900_000);
             await servicesLock.enter('services');
             const failures: string[] = [];
