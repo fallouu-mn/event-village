@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
         try {
             body = await req.json();
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
         }
 
         const { firstName, lastName, phone, email, role } = body;
@@ -334,16 +334,16 @@ export async function PATCH(req: NextRequest) {
         try {
             body = await req.json();
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
         }
 
         const { userId, role, roles: requestedRoles, referralStatus, status } = body;
         const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
         if (status !== undefined && status !== 'ACTIF' && status !== 'SUSPENDU') {
-            return NextResponse.json({ error: 'Statut invalide : ACTIF ou SUSPENDU.', code: 'INVALID_FIELD', field: 'status' }, { status: 400 });
+            return NextResponse.json({ error: 'Choisissez « Actif » ou « Suspendu ».', code: 'INVALID_FIELD', field: 'status' }, { status: 400 });
         }
         if (!userId) {
-            return NextResponse.json({ error: 'userId requis.' }, { status: 400 });
+            return NextResponse.json({ error: 'Compte introuvable. Rechargez la page.' }, { status: 400 });
         }
 
         // Lot 4.0 : le statut ambassadeur fixe les taux de commission. SUPERADMIN seul (users.write
@@ -594,7 +594,7 @@ export async function DELETE(req: NextRequest) {
         }
 
         if (!userId) {
-            return NextResponse.json({ error: 'userId requis.' }, { status: 400 });
+            return NextResponse.json({ error: 'Compte introuvable. Rechargez la page.' }, { status: 400 });
         }
 
         const result = await AdminService.deleteUser(userId, {

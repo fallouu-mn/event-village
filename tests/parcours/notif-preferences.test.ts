@@ -49,7 +49,8 @@ const TEST_PUSH_ROUTE = '../../app/api/notifications/essai-push/route';
 
 const CHANNELS = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'] as const;
 type Channel = (typeof CHANNELS)[number];
-const CHANNEL_LABELS: Record<Channel, string> = { IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notifications push' };
+// Lot « Avis », phase 2 (2h, M3 ; modification signalée) : « Notifications du téléphone », avant « Notifications push »
+const CHANNEL_LABELS: Record<Channel, string> = { IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notifications du téléphone' };
 const TOPIC_LABELS: Record<string, string> = {
     REMINDERS: "Rappels avant l'événement",
     // Lot « Avis », phase 2 (B13 ; modification signalée au rapport) : la suspension devient indispensable. Avant :

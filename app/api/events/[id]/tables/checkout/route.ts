@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
         body = await request.json();
     } catch {
-        return NextResponse.json({ success: false, error: 'Corps JSON invalide.', code: 'INVALID_INPUT' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_INPUT' }, { status: 400 });
     }
     try {
         const outcome = await startTableCheckout({ userId: session.user.id, eventId, body, idempotencyKey: request.headers.get('idempotency-key') });

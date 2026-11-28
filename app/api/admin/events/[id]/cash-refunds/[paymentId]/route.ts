@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         try {
             body = await req.json();
         } catch {
-            throw new PublicError('Demande illisible : corps JSON attendu.', 'INVALID_BODY', 400);
+            throw new PublicError('Demande illisible. Rechargez la page, puis réessayez.', 'INVALID_BODY', 400);
         }
         const parsed = BodySchema.safeParse(body);
         if (!parsed.success) {

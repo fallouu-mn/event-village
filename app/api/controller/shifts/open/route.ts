@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic';
 // Deux nommages acceptés : contrat du lot 4 (eventId, openingFloat, regisseurPin) et écran historique
 // (event_id, opening_float_amount, regisseur_pin).
 const OpenShiftSchema = z.object({
-    eventId: z.string().uuid('ID événement invalide.').optional(),
-    event_id: z.string().uuid('ID événement invalide.').optional(),
+    eventId: z.string().uuid('Événement introuvable. Rechargez la page.').optional(),
+    event_id: z.string().uuid('Événement introuvable. Rechargez la page.').optional(),
     openingFloat: z.coerce.number().min(0, 'Le fond de caisse doit être positif ou nul.').optional(),
     opening_float_amount: z.coerce.number().min(0, 'Le fond de caisse doit être positif ou nul.').optional(),
     regisseurPin: z.string().trim().max(8, 'Code PIN régisseur invalide.').optional().nullable(),
@@ -19,7 +19,7 @@ const OpenShiftSchema = z.object({
     eventId: d.eventId ?? d.event_id ?? '',
     openingFloat: d.openingFloat ?? d.opening_float_amount ?? 0,
     regisseurPin: (d.regisseurPin ?? d.regisseur_pin ?? '') || null,
-})).refine((d) => !!d.eventId, { message: 'ID événement requis.' });
+})).refine((d) => !!d.eventId, { message: 'Événement introuvable. Rechargez la page.' });
 
 /**
  * POST /api/controller/shifts/open — ouverture d'une session de caisse (lot 4.5), par la RPC shift_open :

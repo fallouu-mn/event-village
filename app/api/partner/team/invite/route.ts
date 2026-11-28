@@ -64,11 +64,11 @@ function personLabel(firstName: string | null | undefined): string {
 }
 
 const InviteSchema = z.object({
-    event_id:        z.string().uuid('ID événement invalide.').optional(),
-    eventId:         z.string().uuid('ID événement invalide.').optional(),
+    event_id:        z.string().uuid('Événement introuvable. Rechargez la page.').optional(),
+    eventId:         z.string().uuid('Événement introuvable. Rechargez la page.').optional(),
     // Lot 9 sexies : listes bornées (sans borne, zod accumule une erreur par élément)
-    event_ids:       z.array(z.string().uuid('ID événement invalide.')).max(200, '200 événements au plus.').optional(),
-    eventIds:        z.array(z.string().uuid('ID événement invalide.')).max(200, '200 événements au plus.').optional(),
+    event_ids:       z.array(z.string().uuid('Événement introuvable. Rechargez la page.')).max(200, '200 événements au plus.').optional(),
+    eventIds:        z.array(z.string().uuid('Événement introuvable. Rechargez la page.')).max(200, '200 événements au plus.').optional(),
     phone:           z.string().min(8, 'Numéro de téléphone requis.'),
     first_name:      z.string().trim().optional(),
     firstName:       z.string().trim().optional(),
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
 
         let body: unknown;
         try { body = await req.json(); }
-        catch { return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 }); }
+        catch { return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 }); }
 
         const parse = InviteSchema.safeParse(body);
         if (!parse.success) {

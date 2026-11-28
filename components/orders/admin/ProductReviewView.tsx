@@ -20,6 +20,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Flag, FolderOpen, ImageOff, ListChecks, Pencil, Search, ShieldAlert, ShieldCheck, Store, Tags, XCircle } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { humanToastMessage } from '@/components/ui/human-message';
 import { Tabs, TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -533,7 +534,8 @@ function KeywordsPanel({ data, onSaved }: { data: ReviewReply; onSaved: () => Pr
             setSaved(body?.message ?? 'Liste enregistrée.');
             await onSaved();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Liste non enregistrée. Réessayez.');
+            // Lot « Avis », phase 2 (2h, M12) : une coupure réseau (« Failed to fetch ») n'est jamais affichée telle quelle
+            setError(err instanceof Error && err.message ? humanToastMessage(err.message) : 'Liste non enregistrée. Réessayez.');
         } finally {
             setSaving(false);
         }

@@ -162,7 +162,8 @@ describe('8.2 v — export comptable CSV par la route (T10)', () => {
             const [line] = mine;
             assert.deepEqual(
                 { event: line[COL.event], channel: line[COL.channel], category: line[COL.category], price: line[COL.price], net: line[COL.net], status: line[COL.status] },
-                { event: evA.title, channel: 'EN_LIGNE', category: 'Standard', price: String(PRICE), net: String(PRICE), status: 'VALIDE' },
+                // Lot « Avis », phase 2 (2h, M2 ; modification signalée) : libellés, avant « EN_LIGNE » et « VALIDE »
+                { event: evA.title, channel: 'En ligne', category: 'Standard', price: String(PRICE), net: String(PRICE), status: 'Valable' },
                 `colonnes du billet ${t.ticket_number}`);
         }
         const net = lines.find((l) => l[COL.event] === 'NET ORGANISATEUR (ventes en ligne)');

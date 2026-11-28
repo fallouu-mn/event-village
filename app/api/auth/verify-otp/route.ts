@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
         try {
             body = await req.json();
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
         }
 
         const rawPhone = body.phone?.trim();
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
         if (!rawPhone || !otpCode) {
             return NextResponse.json(
-                { error: 'Numéro de téléphone et code OTP requis.' },
+                { error: 'Entrez votre numéro et le code reçu par SMS.' },
                 { status: 400 }
             );
         }

@@ -146,7 +146,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     try {
         raw = await req.json();
     } catch {
-        return NextResponse.json({ error: 'Demande illisible : corps JSON attendu.', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const parsed = BodySchema.safeParse(raw);
     if (!parsed.success) {

@@ -59,6 +59,10 @@ const SANS_OBJET: Record<string, string> = {
     CONTROLLER_INVITATION_DECLINED: 'équipe de la partenaire (aucune ancre par invitation ; après-lancement)',
     CONTROLLER_INVITATION_EXPIRED: 'équipe de la partenaire (aucune ancre par invitation ; après-lancement)',
     FUNDS_AVAILABLE: 'l’objet est le solde du compte : les finances',
+    // Lot « Avis », phase 2 (2c, ajouts signalés au rapport) : avis nouveaux
+    PARTNER_RESUBMITTED_ACK: 'l’objet est le compte partenaire lui-même : son tableau de bord',
+    SHIFT_DISCREPANCY_VALIDATED: 'caisse validée : le scanner montre l’état du poste (aucune page par caisse côté contrôleur)',
+    CONTROLLER_POST_CHANGED: 'le scanner ouvre lui-même l’événement du poste affecté, avec sa porte',
 };
 
 function sampleIds(sample: Record<string, unknown>): Array<[string, string]> {

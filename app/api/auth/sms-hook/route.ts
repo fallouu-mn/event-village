@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
         try {
             body = JSON.parse(rawBody);
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
         }
 
         // 3. Destinataire et code (format du hook Send SMS de Supabase Auth)

@@ -114,7 +114,7 @@ export async function DELETE(
     const { eventId } = await Promise.resolve(params);
     const assignmentId = req.nextUrl.searchParams.get('assignmentId');
     if (!UUID.safeParse(eventId).success || !assignmentId || !UUID.safeParse(assignmentId).success) {
-        return NextResponse.json({ error: 'Événement et affectation (assignmentId) requis.', code: 'INVALID_REQUEST' }, { status: 400 });
+        return NextResponse.json({ error: 'Affectation introuvable. Rechargez la page.', code: 'INVALID_REQUEST' }, { status: 400 });
     }
 
     try {

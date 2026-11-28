@@ -60,7 +60,7 @@ const CHANNEL_LABELS: Record<Channel, string> = {
     IN_APP: 'Application',
     SMS: 'SMS',
     EMAIL: 'Email',
-    PUSH: 'Notifications push',
+    PUSH: 'Notifications du téléphone',
 };
 
 /** Messages indispensables (H1), toujours envoyés : présentés tels quels, sans réglage. */
@@ -158,7 +158,7 @@ export async function PUT(req: NextRequest) {
     try {
         raw = await req.json();
     } catch {
-        return NextResponse.json({ error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
     }
     const parsed = PutSchema.safeParse(raw);
     if (!parsed.success) return invalidPreference();

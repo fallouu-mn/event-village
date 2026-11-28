@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
 
         if (searchParams.has('path')) {
-            return noStore({ error: 'Paramètre « path » non pris en charge : utilisez partnerId et docType.' }, 400);
+            return noStore({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, 400);
         }
 
         const uploadToken = searchParams.get('uploadToken');
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
         const partnerId = searchParams.get('partnerId');
         const docType = searchParams.get('docType');
         if (!partnerId || !isDocType(docType)) {
-            return noStore({ error: 'Paramètres partnerId et docType (id_card ou business_doc) requis.' }, 400);
+            return noStore({ error: 'Pièce introuvable. Rechargez la page.' }, 400);
         }
 
         const supabase = getServiceRoleClient();

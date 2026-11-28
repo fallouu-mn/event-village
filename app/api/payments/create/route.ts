@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ success: false, error: 'Corps de requête JSON invalide.' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
     }
     const parsed = CreatePaymentSchema.safeParse(body);
     if (!parsed.success) {

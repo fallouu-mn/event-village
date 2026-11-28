@@ -72,7 +72,7 @@ export async function DELETE(
             partnerId = String(p.id);
         } else {
             return NextResponse.json({
-                error: 'Précisez l’organisateur dont le contrôleur doit être retiré (paramètre partnerId).',
+                error: 'Précisez l’organisateur dont le contrôleur doit être retiré.',
                 code: 'PARTNER_SCOPE_REQUIRED',
             }, { status: 400 });
         }

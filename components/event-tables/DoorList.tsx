@@ -7,6 +7,7 @@ import { TextInput } from '@/components/ui/Field';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { cn } from '@/components/ui/cn';
 import { ApiError, fetchJson } from '@/components/partner/fetch-json';
+import { humanToastMessage } from '@/components/ui/human-message';
 import { formatDateTime, formatInteger, formatTime } from '@/lib/format';
 import type { DoorItem, DoorList as DoorListData } from './types';
 
@@ -65,7 +66,8 @@ export function DoorList({ eventId, title }: DoorListProps) {
                 setClosed(err.message);
                 return;
             }
-            setError(err instanceof Error && err.message ? err.message : 'La liste des tables ne peut pas être affichée pour le moment.');
+            // Lot « Avis », phase 2 (2h, M9) : jamais le message brut d'une erreur qui n'est pas une erreur d'API
+            setError(err instanceof Error && err.message ? humanToastMessage(err.message) : 'La liste des tables ne peut pas être affichée pour le moment.');
         } finally {
             setLoading(false);
         }

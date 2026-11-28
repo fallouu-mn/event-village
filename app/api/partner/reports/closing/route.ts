@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const eventId = searchParams.get('eventId');
         if (!eventId) {
-            return NextResponse.json({ error: 'Paramètre eventId obligatoire.' }, { status: 400 });
+            return NextResponse.json({ error: 'Événement introuvable. Rechargez la page.' }, { status: 400 });
         }
 
         const report = await PartnerDashboardService.getClosingReportData(user.id, eventId);

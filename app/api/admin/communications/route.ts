@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         try {
             body = await req.json();
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
         }
 
         const { title, message, senderProfile, targetAudience, channels, sendNow } = body;

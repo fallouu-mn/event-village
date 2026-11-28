@@ -31,7 +31,7 @@ export async function POST(
 
     const { id: eventId } = await context.params;
     if (!eventId) {
-        return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
+        return NextResponse.json({ error: 'Événement introuvable. Rechargez la page.' }, { status: 400 });
     }
     // Lot 9 bis (R2, B31) : un admin doit avoir events.write, contrôlé avant toute lecture du corps ou écriture.
     const access = await requireEventAccess(user, eventId, 'events.write');
@@ -44,12 +44,12 @@ export async function POST(
         try {
             raw = JSON.parse(text);
         } catch {
-            return NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
         }
     }
     const parsed = BodySchema.safeParse(raw);
     if (!parsed.success) {
-        return NextResponse.json({ error: 'Corps invalide : confirm et confirmOpenShifts sont des booléens.', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
 
     try {

@@ -33,12 +33,12 @@ export async function POST(request: NextRequest, ctx: RouteParams<{ id: string }
     try {
         raw = await request.json();
     } catch {
-        return NextResponse.json({ error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const parsed = bodySchema.safeParse(raw);
     if (!parsed.success) {
         return NextResponse.json({
-            error: 'Données invalides : indiquez si les contacts sont inclus (includeContacts) et, dans ce cas, la finalité.',
+            error: 'Indiquez si les contacts sont inclus et, dans ce cas, pourquoi.',
             code: 'INVALID_BODY',
         }, { status: 400 });
     }

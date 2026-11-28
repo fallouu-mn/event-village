@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchJson } from './fetch-json';
+import { humanToastMessage } from '@/components/ui/human-message';
 
 export interface ServerData<T> {
     data: T | null;
@@ -45,7 +46,8 @@ export function useServerData<T>(url: string | null, signal = 0): ServerData<T> 
         } catch (err) {
             if (mine !== seq.current) return;
             console.error(`[useServerData] ${url}`, err);
-            setError(err instanceof Error && err.message ? err.message : 'Lecture impossible pour le moment.');
+            // Lot « Avis », phase 2 (2h, M9) : jamais le message brut d'une erreur qui n'est pas une erreur d'API
+            setError(err instanceof Error && err.message ? humanToastMessage(err.message) : 'Lecture impossible pour le moment.');
         } finally {
             if (mine === seq.current) {
                 setLoading(false);

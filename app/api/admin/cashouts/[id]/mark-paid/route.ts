@@ -43,8 +43,8 @@ async function readBody(request: NextRequest): Promise<Record<string, unknown>> 
     try {
         parsed = JSON.parse(text);
     } catch {
-        throw new PublicError('Requête illisible : corps JSON attendu.', 'INVALID_INPUT', 400);
+        throw new PublicError('Demande illisible. Rechargez la page, puis réessayez.', 'INVALID_INPUT', 400);
     }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new PublicError('Requête illisible : corps JSON attendu.', 'INVALID_INPUT', 400);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new PublicError('Demande illisible. Rechargez la page, puis réessayez.', 'INVALID_INPUT', 400);
     return parsed as Record<string, unknown>;
 }

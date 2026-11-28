@@ -557,7 +557,8 @@ describe('refus en base (trg_cashouts_simulation_guard)', () => {
         const { id } = await simulatedCashout('garde-simule');
         const { error } = await claim(service, id);
         assert.equal(error?.code, 'EV403', `réservation refusée attendue : ${JSON.stringify(error)}`);
-        assert.equal(error?.message, 'SIMULATION_MISMATCH');
+        // Lot « Avis », phase 2 (2h, M17 ; modification signalée) : une phrase au lieu du code « SIMULATION_MISMATCH » (EV403 inchangé)
+        assert.equal(error?.message, "L'envoi ne correspond pas au mode du paiement : un versement simulé ne part jamais en réel, ni l'inverse.");
         assert.equal((await cashout(id)).send_started_at, null, 'ligne inchangée');
     });
 

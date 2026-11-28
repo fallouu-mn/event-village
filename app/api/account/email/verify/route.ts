@@ -54,7 +54,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: 'Demande illisible : corps JSON attendu.', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const token = (body as { token?: unknown } | null)?.token;
     if (!isVerificationToken(token)) return refuse(REFUSALS.EMAIL_LINK_INVALID);

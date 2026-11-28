@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest) {
 
         let body: unknown;
         try { body = await req.json(); }
-        catch { return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 }); }
+        catch { return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 }); }
 
         const parse = ChangePasswordSchema.safeParse(body);
         if (!parse.success) {

@@ -23,7 +23,7 @@ export async function GET(
 
     const { id: eventId } = await context.params;
     if (!eventId) {
-        return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
+        return NextResponse.json({ error: 'Événement introuvable. Rechargez la page.' }, { status: 400 });
     }
     const access = await requireEventAccess(user, eventId, 'events.read');
     if (access.kind === 'DENIED') return access.response;

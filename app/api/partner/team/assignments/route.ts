@@ -25,12 +25,12 @@ const AssignmentSchema = z.object({
 
 const UpdateAssignmentsSchema = z.object({
     controller_id:   z.string().uuid('controller_id invalide.').optional(),
-    controllerId:    z.string().uuid('controllerId invalide.').optional(),
+    controllerId:    z.string().uuid('Contrôleur introuvable. Rechargez la page.').optional(),
     assignments:     z.array(AssignmentSchema).max(200, '200 affectations au plus.').optional(),
     // Lot 9 sexies : listes bornées comme `assignments` (sans borne, zod accumule une erreur par élément)
     event_ids:       z.array(z.string().uuid('event_id invalide.')).max(200, '200 affectations au plus.').optional(),
-    eventIds:        z.array(z.string().uuid('eventIds invalide.')).max(200, '200 affectations au plus.').optional(),
-    eventId:         z.string().uuid('eventId invalide.').optional(),
+    eventIds:        z.array(z.string().uuid('Événement introuvable. Rechargez la page.')).max(200, '200 affectations au plus.').optional(),
+    eventId:         z.string().uuid('Événement introuvable. Rechargez la page.').optional(),
     can_accept_cash:   z.boolean().optional(),
     canAcceptCash:     z.boolean().optional(),
     confirm_promotion: z.boolean().optional(),
@@ -46,7 +46,7 @@ const UpdateAssignmentsSchema = z.object({
     confirm_promotion: data.confirm_promotion ?? data.confirmPromotion ?? false,
     reason:            data.reason,
 })).refine(data => !!data.controller_id, {
-    message: 'controller_id ou controllerId requis.',
+    message: 'Contrôleur introuvable. Rechargez la page.',
 });
 
 type SyncReply = { ok?: boolean; code?: string; message?: string; added?: string[]; removed?: string[]; updated?: number };
@@ -85,7 +85,7 @@ export async function PATCH(req: NextRequest) {
 
         let body: unknown;
         try { body = await req.json(); }
-        catch { return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 }); }
+        catch { return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 }); }
 
         const parse = UpdateAssignmentsSchema.safeParse(body);
         if (!parse.success) {
@@ -286,7 +286,8 @@ export async function PATCH(req: NextRequest) {
             if (!ev || !isEventEligibleForController(ev.status)) {
                 return NextResponse.json({
                     error: INELIGIBLE_EVENT_ASSIGNMENT_ERROR,
-                    details: `L'événement "${ev?.title ?? evId}" est en statut ${ev?.status ?? 'inconnu'}. Seuls les événements confirmés (VALIDÉ ou PUBLIÉ) peuvent être affectés.`,
+                    // Lot « Avis », phase 2 (2h, M10) : jamais le statut brut ni l'identifiant
+                    details: `L'événement ${ev?.title ? `« ${ev.title} » ` : ''}n'est pas encore validé ou en ligne : seuls les événements validés ou en ligne peuvent être affectés.`,
                 }, { status: 400 });
             }
         }

@@ -36,7 +36,7 @@ export const OUTBOX_CHANNEL_LABELS: Readonly<Record<OutboxChannel, string>> = {
     IN_APP: 'Application',
     SMS: 'SMS',
     EMAIL: 'Email',
-    PUSH: 'Notification push',
+    PUSH: 'Notification du téléphone',
 };
 
 /** Motifs du contrat C4 (SKIPPED, CANCELLED, FAILED, UNCERTAIN). */
@@ -52,10 +52,10 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     NO_PHONE: 'Aucun numéro de téléphone',
     NO_REAL_EMAIL: 'Aucune adresse email réelle',
     EMAIL_NOT_CONFIGURED: 'Envoi des emails non configuré',
-    PUSH_NOT_CONFIGURED: 'Notifications push non configurées',
-    NO_PUSH_SUBSCRIPTION: 'Aucun appareil abonné aux notifications push',
+    PUSH_NOT_CONFIGURED: 'Notifications du téléphone non configurées',
+    NO_PUSH_SUBSCRIPTION: 'Aucun appareil abonné aux notifications du téléphone',
     // Lot 9 bis (R28) : SENT = push accepté par le service push, jamais une preuve d'affichage.
-    PUSH_DELIVERED: 'Push accepté par le service, SMS non envoyé (affichage non garanti)',
+    PUSH_DELIVERED: 'Notification du téléphone acceptée par le service, SMS non envoyé (affichage non garanti)',
     SMS_POLICY_NEVER: 'Rappel sans SMS selon les réglages',
     SMS_DAILY_CAP: 'Plafond quotidien de SMS atteint',
     // Lot 7 (7.0 a, 7.0 b) : budget des SMS optionnels ; rappel d'un porteur de billets gratuits seulement.
@@ -92,9 +92,9 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     SMS_PROVIDER_ERROR: 'Fournisseur SMS indisponible',
     EMAIL_REJECTED: 'Email refusé par le fournisseur',
     EMAIL_PROVIDER_ERROR: "Fournisseur d'emails indisponible",
-    PUSH_REJECTED: 'Notification refusée par le service push',
+    PUSH_REJECTED: 'Notification refusée par le service des notifications du téléphone',
     PUSH_PAYLOAD_TOO_LARGE: 'Notification trop volumineuse',
-    PUSH_PROVIDER_ERROR: 'Service push indisponible',
+    PUSH_PROVIDER_ERROR: 'Service des notifications du téléphone indisponible',
     TEMPLATE_ERROR: 'Contenu du message incomplet',
     SENDING_INTERRUPTED: 'Envoi interrompu',
     // Lot 9 bis (I1) : garde des comptes de démonstration injoignable, la ligne est reprise plus tard (échec fermé).

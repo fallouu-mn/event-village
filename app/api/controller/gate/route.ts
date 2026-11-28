@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
             raw = await req.json();
         } catch (parseErr) {
             console.warn(`[${CONTEXT}] corps illisible :`, parseErr instanceof Error ? parseErr.message : String(parseErr));
-            throw new PublicError('Corps de requête illisible.', 'INVALID_BODY', 400);
+            throw new PublicError('Demande illisible. Rechargez la page, puis réessayez.', 'INVALID_BODY', 400);
         }
         const parsed = BodySchema.safeParse(raw);
         if (!parsed.success) throw new PublicError('Choix de porte invalide : événement et porte requis.', 'INVALID_BODY', 400);

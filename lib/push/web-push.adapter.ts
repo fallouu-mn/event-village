@@ -51,10 +51,10 @@ export class WebPushAdapter implements PushAdapter {
     async send(target: PushTarget, message: PushMessage, options: PushSendOptions): Promise<PushSendResult> {
         const config = getPushConfig();
         if (!config.enabled) {
-            return { outcome: 'REJECTED', statusCode: null, error: `Push non configuré : ${config.reason}` };
+            return { outcome: 'REJECTED', statusCode: null, error: `Notifications du téléphone non configurées : ${config.reason}` };
         }
         if (!isAllowedPushEndpoint(target.endpoint)) {
-            return { outcome: 'REJECTED', statusCode: null, error: 'Point d’arrivée hors de la liste blanche des services push' };
+            return { outcome: 'REJECTED', statusCode: null, error: 'Point d’arrivée hors de la liste blanche des services de notifications' };
         }
 
         let details: ReturnType<typeof webpush.generateRequestDetails>;
@@ -112,12 +112,12 @@ export class WebPushAdapter implements PushAdapter {
 
         if (status === 200 || status === 201 || status === 202) return { outcome: 'ACCEPTED', statusCode: status };
         if (status === 404 || status === 410) return { outcome: 'GONE', statusCode: status, error: `Abonnement expiré (HTTP ${status})` };
-        if (status === 413) return { outcome: 'TOO_LARGE', statusCode: status, error: 'Charge trop grande pour le service push (HTTP 413)' };
+        if (status === 413) return { outcome: 'TOO_LARGE', statusCode: status, error: 'Message trop long pour le service des notifications du téléphone' };
         if (status === 429 || status >= 500) {
-            const out: PushSendResult = { outcome: 'RETRY', statusCode: status, error: `Service push momentanément indisponible (HTTP ${status})` };
+            const out: PushSendResult = { outcome: 'RETRY', statusCode: status, error: `Service des notifications du téléphone momentanément indisponible (code ${status})` };
             if (retryAfter !== undefined) out.retryAfterSeconds = retryAfter;
             return out;
         }
-        return { outcome: 'REJECTED', statusCode: status, error: `Refus du service push (HTTP ${status})` };
+        return { outcome: 'REJECTED', statusCode: status, error: `Refus du service des notifications du téléphone (code ${status})` };
     }
 }

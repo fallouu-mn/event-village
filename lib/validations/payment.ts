@@ -13,9 +13,9 @@ export const CreatePaymentSchema = z.object({
         'TABLE_RESERVATION',
         'TICKET',
         'SUBSCRIPTION',
-    ], zodTypeErrors({ required: 'Le type de cible (targetType) est obligatoire.', invalid: 'Type de paiement non reconnu.' })),
+    ], zodTypeErrors({ required: 'Type d’achat manquant. Rechargez la page.', invalid: 'Type de paiement non reconnu.' })),
     targetId: z.string().uuid({
-        message: 'L’identifiant de la cible (targetId) doit être un UUID valide.',
+        message: 'Achat introuvable. Rechargez la page.',
     }),
     // Lot 2 : Wave ou Orange Money obligatoire ; carte bancaire retirée tant qu'elle n'est pas intégrée.
     operator: z.enum(['WAVE', 'ORANGE_MONEY'], zodTypeErrors({ required: 'Choisissez Wave ou Orange Money.', invalid: 'Choisissez Wave ou Orange Money.' })),
@@ -38,8 +38,8 @@ export type CreatePaymentInput = z.infer<typeof CreatePaymentSchema>;
  * lib/payments/webhook.service.ts (jeton du callBackUrl, corrélation, statut SamirPay).
  */
 export const SamirPayWebhookSchema = z.object({
-    transaction_id: z.string().uuid({ message: 'transaction_id SamirPay invalide.' }),
-    order_id: z.string().regex(/^ORD-EV-\d{13}-[0-9A-F]{6,12}$/, { message: 'order_id invalide.' }),
+    transaction_id: z.string().uuid({ message: 'Paiement introuvable.' }),
+    order_id: z.string().regex(/^ORD-EV-\d{13}-[0-9A-F]{6,12}$/, { message: 'Référence de commande illisible.' }),
     status: z.literal('success'),
 });
 
@@ -53,7 +53,7 @@ export const RequestWithdrawalSchema = z.object({
     amount: z.number(zodTypeErrors({ required: 'Le montant du retrait est requis.', invalid: 'Le montant doit être un nombre.' })).min(5000, {
         message: 'Le montant minimum de retrait est de 5 000 FCFA.',
     }),
-    operatorName: z.enum(['WAVE', 'ORANGE_MONEY'], zodTypeErrors({ required: 'L\'opérateur (WAVE ou ORANGE_MONEY) est requis.', invalid: 'Opérateur non supporté (choisir WAVE ou ORANGE_MONEY).' })),
+    operatorName: z.enum(['WAVE', 'ORANGE_MONEY'], zodTypeErrors({ required: 'Choisissez Wave ou Orange Money.', invalid: 'Choisissez Wave ou Orange Money.' })),
     phoneNumber: z.string().min(8, {
         message: 'Le numéro de téléphone du bénéficiaire est requis (au moins 8 chiffres).',
     }),

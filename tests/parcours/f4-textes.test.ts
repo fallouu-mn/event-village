@@ -174,9 +174,10 @@ describe('5. design 1c : « super-administrateur », écart de caisse en mots', 
         assert.match(code, /Donnez-le seulement au super-administrateur\./);
     });
     test('écart de caisse : « Il manque … », « … de trop », un seul SMS au pire cas', () => {
-        assert.equal(S('SHIFT_DISCREPANCY', { difference: -2_500 }), 'Event Village : caisse de Fatou Sow fermée (Gala de la Teranga). Il manque 2 500 F CFA. https://app.eventvillage.sn/partner/events');
-        assert.equal(S('SHIFT_DISCREPANCY', { difference: 2_500 }), 'Event Village : caisse de Fatou Sow fermée (Gala de la Teranga). 2 500 F CFA de trop. https://app.eventvillage.sn/partner/events');
-        assert.equal(I('SHIFT_DISCREPANCY', { difference: -2_500, justification: null }).content, 'La caisse de Fatou Sow pour « Gala de la Teranga » est fermée. Il manque 2 500 F CFA.');
+        // Lot « Avis », phase 2 (2h, C1, décision D3 ; modification signalée) : prénom et initiale (« Fatou S. »), avant « Fatou Sow »
+        assert.equal(S('SHIFT_DISCREPANCY', { difference: -2_500 }), 'Event Village : caisse de Fatou S. fermée (Gala de la Teranga). Il manque 2 500 F CFA. https://app.eventvillage.sn/partner/events');
+        assert.equal(S('SHIFT_DISCREPANCY', { difference: 2_500 }), 'Event Village : caisse de Fatou S. fermée (Gala de la Teranga). 2 500 F CFA de trop. https://app.eventvillage.sn/partner/events');
+        assert.equal(I('SHIFT_DISCREPANCY', { difference: -2_500, justification: null }).content, 'La caisse de Fatou S. pour « Gala de la Teranga » est fermée. Il manque 2 500 F CFA.');
         for (const difference of [-9_999_999, 9_999_999, -1, 1]) {
             const text = sms('SHIFT_DISCREPANCY', { ...long(CATALOG.SHIFT_DISCREPANCY.sample), controller_name: 'Mame Diarra Ndiaye Diop Sarr', difference });
             assertOneSegment(`écart ${difference}`, text);

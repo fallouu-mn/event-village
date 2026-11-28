@@ -326,7 +326,7 @@ export async function DELETE(req: NextRequest) {
 
         const controllerId = req.nextUrl.searchParams.get('controllerId');
         if (!controllerId) {
-            return NextResponse.json({ error: 'controllerId requis.' }, { status: 400 });
+            return NextResponse.json({ error: 'Contrôleur introuvable. Rechargez la page.' }, { status: 400 });
         }
         // Lot 9 quater (B8 : N-01, E-09) : un admin agit sur l'équipe d'UN organisateur, nommé par partnerId ; sans lui,
         // 400 et rien n'est supprimé (avant : retrait chez tous les organisateurs, SMS compris).

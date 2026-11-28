@@ -34,10 +34,10 @@ export async function PATCH(request: NextRequest) {
     try {
         raw = await request.json();
     } catch {
-        return NextResponse.json({ error: 'Demande illisible : corps JSON attendu.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
     }
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-        return NextResponse.json({ error: 'Demande illisible : objet JSON attendu.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
     }
 
     const parsed = CitySchema.safeParse(raw);

@@ -40,7 +40,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const ficheRefusal = await partnerTransitionFicheRefusal(session.user, (raw as { to?: unknown } | null | undefined)?.to);
     if (ficheRefusal) return ficheRefusal;
     if (unreadable) {
-        return NextResponse.json({ error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const parsed = bodySchema.safeParse(raw);
     if (!parsed.success) {

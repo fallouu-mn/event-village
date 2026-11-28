@@ -112,7 +112,7 @@ export async function PATCH(req: NextRequest) {
     try {
         raw = await req.json();
     } catch {
-        return NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const table = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).table : undefined;
     const rule = typeof table === 'string' && Object.prototype.hasOwnProperty.call(MODERATION_TABLES, table) ? MODERATION_TABLES[table] : null;

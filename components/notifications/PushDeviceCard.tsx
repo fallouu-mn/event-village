@@ -6,8 +6,19 @@ import { Button } from '@/components/ui/Button';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
+import { humanToastMessage } from '@/components/ui/human-message';
 import { TONE_ICON, type Tone } from '@/components/ui/tones';
 import { currentPushState, disablePush, enablePush, type PushState } from '@/lib/push/client';
+
+/**
+ * Lot « Avis », phase 2 (2h, M1) : message affiché après un échec d'activation ou de désactivation. Une erreur du navigateur
+ * (DOMException de pushManager.subscribe, en anglais) donne la phrase simple ; un message de nos routes (français) est gardé,
+ * passé au garde-fou des codes techniques.
+ */
+function pushActionError(err: unknown, fallback: string): string {
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException) return fallback;
+  return err instanceof Error && err.message ? humanToastMessage(err.message) : fallback;
+}
 
 /**
  * État des notifications push SUR CET APPAREIL (lot 6, contrat H4 et F4 « Client »).
@@ -46,13 +57,13 @@ const COPY: Record<PushState, StateCopy> = {
   },
   unsupported: {
     title: 'Non prises en charge par ce navigateur',
-    description: 'Ce navigateur ne reçoit pas les notifications push. Sur iPhone, ajoutez d’abord Event Village à l’écran d’accueil (bouton Partager, puis « Sur l’écran d’accueil »), ouvrez l’application depuis cette icône, puis revenez ici.',
+    description: 'Ce navigateur ne peut pas recevoir les notifications du téléphone. Sur iPhone, ajoutez d’abord Event Village à l’écran d’accueil (bouton Partager, puis « Sur l’écran d’accueil »), ouvrez l’application depuis cette icône, puis revenez ici.',
     icon: MonitorSmartphone,
     tone: 'neutral',
   },
   unavailable: {
     title: 'Indisponibles pour le moment',
-    description: 'Les notifications push ne sont pas encore proposées par Event Village. Vous recevez vos messages dans l’application et par SMS.',
+    description: 'Les notifications du téléphone ne sont pas encore proposées par Event Village. Vous recevez vos messages dans l’application et par SMS.',
     icon: WifiOff,
     tone: 'neutral',
   },
@@ -109,7 +120,8 @@ export function PushDeviceCard() {
       else if (next === 'disabled') setActionError('Aucune autorisation donnée : les notifications restent désactivées.');
     } catch (err) {
       console.error('[PushDeviceCard] activation impossible :', err instanceof Error ? err.message : String(err));
-      setActionError(err instanceof Error && err.message ? err.message : 'Activation impossible pour le moment. Réessayez.');
+      // Lot « Avis », phase 2 (2h, M1) : le message brut du navigateur (anglais, refus de l'abonnement) n'est jamais affiché
+      setActionError(pushActionError(err, 'L’activation n’a pas marché sur ce navigateur. Vérifiez que les notifications sont autorisées, puis réessayez.'));
     } finally {
       setIsWorking(false);
     }
@@ -124,7 +136,7 @@ export function PushDeviceCard() {
       await refreshState();
     } catch (err) {
       console.error('[PushDeviceCard] désactivation impossible :', err instanceof Error ? err.message : String(err));
-      setActionError(err instanceof Error && err.message ? err.message : 'Désactivation impossible pour le moment. Réessayez.');
+      setActionError(pushActionError(err, 'Désactivation impossible pour le moment. Réessayez.'));
     } finally {
       setIsWorking(false);
     }

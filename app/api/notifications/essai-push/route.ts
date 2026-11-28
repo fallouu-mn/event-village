@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const quota = await reserveQuota(
         [{ scope: 'push_test_user', bucket: userId, windowSecs: 3600, max: getServerEnv().PUSH_TEST_PER_USER_HOUR }],
-        'notification push d’essai');
+        'notification d’essai');
     if (!quota.allowed) {
         return quotaRefusalResponse(quota, { error: 'Trop de notifications d’essai en une heure. Réessayez plus tard.', code: 'RATE_LIMITED' });
     }
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const config = getPushConfig();
     if (!config.enabled) {
         return NextResponse.json(
-            { error: 'Les notifications push ne sont pas disponibles pour le moment.', code: 'PUSH_NOT_CONFIGURED' },
+            { error: 'Les notifications du téléphone ne sont pas disponibles pour le moment.', code: 'PUSH_NOT_CONFIGURED' },
             { status: 409, headers: NO_STORE },
         );
     }

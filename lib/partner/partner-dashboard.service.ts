@@ -3,6 +3,7 @@ import { accountBalance } from '@/lib/finance/ledger';
 import { formatFcfa } from '@/lib/format';
 import { dakarInstant } from '@/lib/validations/event';
 import { eventStatusLabel } from '@/lib/events/event-status';
+import { ticketStatusLabel } from '@/lib/tickets/ticket-status';
 import { pdfAmount, pdfText } from '@/lib/pdf/pdf-text';
 import { supportEmail } from '@/lib/support';
 import type { PilotageClosing, PilotageSales } from '@/components/partner/pilotage/types';
@@ -1194,20 +1195,21 @@ export class PartnerDashboardService {
                 const flag = t.payment_id ? flags.get(t.payment_id) : undefined;
                 const online = flag?.platform === true;
                 const price = Number(t.price) || 0;
-                const channel = online ? 'EN_LIGNE' : price > 0 ? 'ESPECES' : 'INVITATION';
+                // Lot « Avis », phase 2 (2h, M2) : libellés lisibles, jamais les codes (EN_LIGNE, VALIDE…) ni l'identifiant technique
+                const channel = online ? 'En ligne' : price > 0 ? 'Espèces' : 'Invitation';
                 return [
                     t.created_at ? new Date(t.created_at).toISOString().split('T')[0] : '',
                     String(eventList.find((e) => e.id === t.event_id)?.title ?? 'Événement'),
                     flag?.reference ?? '',
                     channel,
-                    t.ticket_number || t.id,
+                    t.ticket_number || '—',
                     categories.find((c) => c.id === t.category_id)?.name ?? 'Standard',
                     1,
                     price,
                     online ? Number(t.service_fee ?? 0) : 0,
                     online && REFUNDED_TICKET.has(t.status) ? price : 0,
                     online && SOLD.has(t.status) ? price : 0,
-                    t.status,
+                    ticketStatusLabel(t.status),
                 ];
             });
 

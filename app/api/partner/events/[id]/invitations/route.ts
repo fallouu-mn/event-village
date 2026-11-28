@@ -58,7 +58,7 @@ export async function POST(request: NextRequest, ctx: RouteParams<{ id: string }
             raw = await request.json();
         } catch (parseErr) {
             console.warn(`[${context}] corps illisible :`, parseErr instanceof Error ? parseErr.message : String(parseErr));
-            throw new PublicError('Corps de requête illisible.', 'INVALID_BODY', 400);
+            throw new PublicError('Demande illisible. Rechargez la page, puis réessayez.', 'INVALID_BODY', 400);
         }
         const parsed = CreateInvitationsSchema.safeParse(raw);
         if (!parsed.success) {

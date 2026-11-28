@@ -34,11 +34,11 @@ export async function PATCH(request: NextRequest, ctx: RouteParams<{ id: string 
     try {
         raw = await request.json();
     } catch {
-        return NextResponse.json({ error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const parsed = bodySchema.safeParse(raw);
     if (!parsed.success) {
-        return NextResponse.json({ error: 'Données invalides : canAcceptCash doit valoir vrai ou faux.', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Indiquez si le contrôleur peut encaisser en espèces.', code: 'INVALID_BODY' }, { status: 400 });
     }
 
     try {

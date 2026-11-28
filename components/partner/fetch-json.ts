@@ -6,6 +6,8 @@
  * avalé : l'écran affiche l'erreur (ErrorState avec « Réessayer », bandeau ou toast).
  */
 
+import { humanToastMessage } from '@/components/ui/human-message';
+
 export class ApiError extends Error {
     constructor(message: string, readonly status: number, readonly code: string | null, readonly body: Record<string, unknown> | null) {
         super(message);
@@ -69,6 +71,8 @@ export function sendJson<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', pa
 /** Message affichable d'une erreur quelconque. */
 export function errorMessage(err: unknown, fallback = 'Une erreur est survenue. Réessayez.'): string {
     if (err instanceof ApiError) return err.message;
-    if (err instanceof Error && err.message) return err.message;
+    // Lot « Avis », phase 2 (2h, M9) : une erreur qui n'est pas une erreur d'API (réponse illisible, coupure réseau, erreur de
+    // code) passe par le garde-fou des messages bruts
+    if (err instanceof Error && err.message) return humanToastMessage(err.message);
     return fallback;
 }

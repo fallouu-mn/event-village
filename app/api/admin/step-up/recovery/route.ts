@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     try {
         raw = await req.json();
     } catch {
-        return noStore(NextResponse.json({ error: 'Demande illisible : corps JSON attendu.', code: 'INVALID_BODY' }, { status: 400 }));
+        return noStore(NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 }));
     }
     const parsed = BodySchema.safeParse(raw);
     if (!parsed.success) {

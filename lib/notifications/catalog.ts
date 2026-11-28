@@ -432,6 +432,17 @@ const withdrawalPath = (d: object): string => {
 /** Avis phase 2 (A2) : destination d'un retrait demandé, jamais le code (virement : le compte bancaire). */
 const withdrawalTarget = (d: object): string => (optText(d, 'method') === 'BANK' ? 'votre compte bancaire' : operatorLabel(field(d, 'operator')));
 const withdrawalTargetSms = (d: object): string => (optText(d, 'method') === 'BANK' ? 'votre banque' : operatorLabel(field(d, 'operator')));
+/**
+ * Avis phase 2 (2h, C1 ; décision D3 du 27/11) : prénom et initiale du nom (« Fatou S. ») d'une personne nommée dans un avis
+ * envoyé à une autre (contrôleur nommé à l'organisatrice) ; un seul mot : gardé tel quel. Le nom complet ne reste qu'entre
+ * administrateurs (exception justifiée : équipe interne, alerte de sécurité).
+ */
+export function personShortName(full: string): string {
+    const words = full.trim().split(/\s+/).filter(Boolean);
+    if (words.length < 2) return words[0] ?? full.trim();
+    const last = words[words.length - 1];
+    return `${words[0]} ${last.charAt(0).toUpperCase()}.`;
+}
 /** Avis phase 2 (D1) : où réessayer un paiement non abouti (événement, commande, réservation, abonnement). */
 function paymentRetryPath(d: object): string {
     switch (optText(d, 'target')) {
@@ -1203,10 +1214,10 @@ const CATALOG = {
             return {
                 title: 'Écart de caisse',
                 // Design 1c : l'écart en mots, « Il manque … » ou « … de trop »
-                content: `La caisse de ${text(d, 'controller_name')} pour ${q(text(d, 'title'))} est fermée. ${cashGapText(num(d, 'difference'), formatFcfa)}${justification ? ` Justification : ${sentence(justification)}` : ''}`,
+                content: `La caisse de ${personShortName(text(d, 'controller_name'))} pour ${q(text(d, 'title'))} est fermée. ${cashGapText(num(d, 'difference'), formatFcfa)}${justification ? ` Justification : ${sentence(justification)}` : ''}`,
             };
         },
-        sms: (d, ctx) => `${SMS_PREFIX}caisse de ${smsVar(text(d, 'controller_name'), 20)} fermée (${smsVar(text(d, 'title'), 25)}). ${cashGapText(num(d, 'difference'), smsAmount)} ${appLink(ctx, '/partner/events')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}caisse de ${smsVar(personShortName(text(d, 'controller_name')), 20)} fermée (${smsVar(text(d, 'title'), 25)}). ${cashGapText(num(d, 'difference'), smsAmount)} ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT, shift_id: SAMPLE_ID.shift, controller_name: 'Fatou Sow', difference: -2_500, declared: 47_500, justification: 'Erreur de monnaie rendue.' },
     }),
     WITHDRAWAL_PAID: define('WITHDRAWAL_PAID', {
@@ -2675,10 +2686,10 @@ const CATALOG = {
         label: 'Invitation de contrôleur acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
         night: 'DEFER',
         link: () => '/partner/team',
-        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'controller_name'), 18)} a accepté de scanner les billets à vos entrées. Choisissez sa porte : ${appLink(ctx, '/partner/team')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(personShortName(text(d, 'controller_name')), 18)} a accepté de scanner les billets à vos entrées. Choisissez sa porte : ${appLink(ctx, '/partner/team')}`,
         inApp: (d) => ({
             title: 'Invitation acceptée',
-            content: `${text(d, 'controller_name')} a accepté votre invitation à contrôler l'entrée de ${invitedEventsClause(d)}. Choisissez sa porte et les espèces dans votre équipe.`,
+            content: `${personShortName(text(d, 'controller_name'))} a accepté votre invitation à contrôler l'entrée de ${invitedEventsClause(d)}. Choisissez sa porte et les espèces dans votre équipe.`,
         }),
         sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Aminata Fall' },
     }),
@@ -2710,10 +2721,10 @@ const CATALOG = {
         label: 'Contrôleur devenu administrateur', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
         night: 'DEFER',
         link: () => '/partner/team',
-        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'controller_name'), 18)} ne fait plus partie de votre équipe d'entrée. Invitez une autre personne : ${appLink(ctx, '/partner/team')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(personShortName(text(d, 'controller_name')), 18)} ne fait plus partie de votre équipe d'entrée. Invitez une autre personne : ${appLink(ctx, '/partner/team')}`,
         inApp: (d) => ({
             title: 'Contrôleur retiré de votre équipe',
-            content: `${text(d, 'controller_name')} ne fait plus partie de votre équipe : son compte est devenu un compte d'administration Event Village. Invitez une autre personne pour vos entrées.`,
+            content: `${personShortName(text(d, 'controller_name'))} ne fait plus partie de votre équipe : son compte est devenu un compte d'administration Event Village. Invitez une autre personne pour vos entrées.`,
         }),
         sample: { controller_name: 'Aminata Fall' },
     }),
@@ -3161,7 +3172,6 @@ const CATALOG = {
             content: `Votre demande de retrait de ${money(d, 'amount')} vers ${withdrawalTarget(d)} est enregistrée. Vous serez prévenu dès qu'elle sera versée. Si ce n'est pas vous, ouvrez la page Aide tout de suite.`,
         }),
         sms: (d, ctx) => `${SMS_PREFIX}demande de retrait de ${smsAmount(num(d, 'amount'))} vers ${withdrawalTargetSms(d)} enregistrée. Pas vous ? Ouvrez l'aide : ${appLink(ctx, '/aide')}`,
-        emailBlocks: () => ({ ctaLabel: 'Voir mon retrait' }),
         sample: { ...SAMPLE_MONEY, withdrawal_id: SAMPLE_ID.transfer, method: 'MOBILE_MONEY' },
     }),
     // A5 : dossier complété après un refus, accusé à la partenaire (petite étape : cloche et notification).
@@ -3236,7 +3246,6 @@ const CATALOG = {
         link: () => '/wallet',
         inApp: (d) => ({ title: 'Commissions disponibles', content: `${money(d, 'amount')} de commissions de parrainage peuvent maintenant être retirés.` }),
         sms: (d, ctx) => `${SMS_PREFIX}${smsAmount(num(d, 'amount'))} de commissions de parrainage sont disponibles. Retirez-les : ${appLink(ctx, '/wallet')}`,
-        emailBlocks: () => ({ ctaLabel: 'Retirer mes commissions' }),
         sample: { day: '2026-11-14', amount: 4_500 },
     }),
     // D1 : paiement non abouti (échoué ou expiré), une fois par panier, jamais si un autre paiement du panier a réussi ;
@@ -3245,7 +3254,8 @@ const CATALOG = {
         label: 'Paiement non abouti', channels: ['IN_APP', 'SMS', 'PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'PAYMENT', night: 'DEFER',
         link: paymentRetryPath,
         inApp: (d) => ({ title: 'Paiement non abouti', content: paymentNotCompletedText(d) }),
-        sms: (d, ctx) => `${SMS_PREFIX}paiement non abouti ${paymentNotCompletedSms(d)}. Rien n'a été débité. Réessayez : ${appLink(ctx, paymentRetrySmsPath(d))}`,
+        // Lot 9 bis (R74) : une valeur tronquée finit par « ... », jamais « .... »
+        sms: (d, ctx) => `${SMS_PREFIX}${endWithPeriod(`paiement non abouti ${paymentNotCompletedSms(d)}`)} Rien n'a été débité. Réessayez : ${appLink(ctx, paymentRetrySmsPath(d))}`,
         sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, target: 'TICKET', amount: 15_000 },
     }),
     // D8 : juste avant l'anonymisation d'un compte par l'équipe (SMS et email, envoyés tout de suite ; aucune cloche : le compte
@@ -3257,8 +3267,7 @@ const CATALOG = {
             title: 'Votre compte est supprimé',
             content: 'L\'équipe Event Village supprime votre compte : votre nom, votre numéro et votre adresse vont être effacés. Les paiements passés restent dans les registres comptables, sans votre nom. Pour toute question, ouvrez la page Aide.',
         }),
-        sms: (_d, ctx) => `${SMS_PREFIX}votre compte est supprimé par l'équipe, vos informations personnelles vont être effacées. Une question : ${appLink(ctx, '/aide')}`,
-        emailBlocks: () => ({ ctaLabel: 'Ouvrir la page Aide' }),
+        sms: (_d, ctx) => `${SMS_PREFIX}votre compte est supprimé par l'équipe, vos informations personnelles sont effacées. Une question : ${appLink(ctx, '/aide')}`,
         sample: {},
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
@@ -3266,7 +3275,7 @@ const CATALOG = {
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),
     OTP_WITHDRAWAL: defineSync('OTP_WITHDRAWAL', 'Code de confirmation d’un retrait'),
     OTP_PHONE_CHANGE: defineSync('OTP_PHONE_CHANGE', 'Code de changement de numéro'),
-    OTP_AUTH_HOOK: defineSync('OTP_AUTH_HOOK', 'Code de connexion (Supabase)'),
+    OTP_AUTH_HOOK: defineSync('OTP_AUTH_HOOK', 'Code de connexion (envoyé à la connexion)'),
     CONTROLLER_INVITE: defineSync('CONTROLLER_INVITE', 'Invitation d’un contrôleur'),
     // Lot 9 quinquies (A2, A3)
     ACCOUNT_ACTIVATION: defineSync('ACCOUNT_ACTIVATION', 'Lien d’activation d’un compte créé par un administrateur'),
@@ -3564,7 +3573,7 @@ export function catalogTypeLabel(type: unknown): string {
 }
 
 export const CHANNEL_LABELS: Readonly<Record<Channel, string>> = {
-    IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notifications push',
+    IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notifications du téléphone',
 };
 
 /** Libellé d'un canal ; un canal inconnu donne « Canal inconnu », jamais la valeur brute. */
@@ -3577,7 +3586,7 @@ function channelPhrase(channel: unknown): string {
         case 'IN_APP': return 'dans l\'application';
         case 'SMS': return 'par SMS';
         case 'EMAIL': return 'par email';
-        case 'PUSH': return 'par notification push';
+        case 'PUSH': return 'par notification du téléphone';
         default: return 'sur un canal inconnu';
     }
 }

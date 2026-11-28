@@ -67,12 +67,12 @@ export async function POST(req: NextRequest) {
         try {
             body = await req.json();
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
         }
 
         const { adminId, permissions } = body;
         if (!adminId || !Array.isArray(permissions)) {
-            return NextResponse.json({ error: 'adminId et tableau de permissions requis.' }, { status: 400 });
+            return NextResponse.json({ error: 'Choisissez un administrateur et ses droits.' }, { status: 400 });
         }
 
         // Finition 3b (E-36) : un droit d'écriture amène sa lecture ; un droit retiré ou inconnu est ignoré.

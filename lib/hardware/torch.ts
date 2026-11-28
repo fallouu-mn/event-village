@@ -49,7 +49,7 @@ export async function setTorchState(
         return {
             success: false,
             isOn: false,
-            error: 'applyConstraints non supporté par ce navigateur.',
+            error: 'La lampe n’est pas disponible sur ce navigateur.',
         };
     }
 

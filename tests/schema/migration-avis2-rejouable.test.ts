@@ -27,6 +27,7 @@ const FILES = [
     '20261230000003_avis_canaux.sql',
     '20261230000004_avis_admins.sql',
     '20261230000005_avis_parrainage_paiement.sql',
+    '20261230000006_avis_mots.sql',
 ];
 
 /** Recopies du lot : fonction → dernière définition de main (fichier, première et dernière ligne) et migration du lot. */
@@ -41,6 +42,16 @@ const RECOPIES: Record<string, { from: string; lines: [number, number]; in: stri
     'private.order_review_batch_done': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [54, 75], in: FILES[3] },
     'private.order_refund_blocked_notify': { from: '20261224000005_l12c_cv_correctifs.sql', lines: [469, 503], in: FILES[3] },
     'public.notification_daily_checks': { from: '20261125000003_f4_ventes.sql', lines: [382, 564], in: FILES[4] },
+    'public.cashouts_simulation_guard': { from: '20261106000002_lot8_essai.sql', lines: [110, 127], in: FILES[5] },
+};
+
+/** Lignes de la dernière définition remplacées exprès (→ ligne qui la remplace dans la recopie), une par une, justifiées. */
+const REPLACED: Record<string, Record<string, string>> = {
+    // 2h (M17) : le message du refus devient une phrase ; code EV403 inchangé
+    'public.cashouts_simulation_guard': {
+        "RAISE EXCEPTION USING ERRCODE = 'EV403', MESSAGE = 'SIMULATION_MISMATCH';":
+            "RAISE EXCEPTION USING ERRCODE = 'EV403', MESSAGE = 'L''envoi ne correspond pas au mode du paiement : un versement simulé ne part jamais en réel, ni l''inverse.';",
+    },
 };
 
 /** Fonctions nouvelles du lot. */
@@ -111,8 +122,11 @@ describe('Lot « Avis » phase 2 — migrations', () => {
             const mine = definitions(name, FILES);
             assert.deepEqual(mine.map((d) => d.file), [r.in], `une seule recopie dans le lot, dans ${r.in}`);
             const kept = new Set(mine[0].text.split('\n').map((l) => l.trim()));
-            const lost = previous!.text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !kept.has(l));
+            const replaced = REPLACED[name] ?? {};
+            const lost = previous!.text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !kept.has(l) && !(l in replaced));
             assert.deepEqual(lost, [], 'lignes perdues');
+            const missing = Object.entries(replaced).filter(([, r]) => !kept.has(r)).map(([l, r]) => `${l} → ${r}`);
+            assert.deepEqual(missing, [], 'remplaçantes absentes');
             const head = fs.readFileSync(path.join(DIR, r.in), 'utf8');
             assert.ok(head.includes(`${r.from}:${r.lines.join('-')}`), `fichier et lignes de la dernière définition cités dans ${r.in}`);
         });

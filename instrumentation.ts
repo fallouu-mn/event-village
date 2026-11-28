@@ -22,6 +22,13 @@ export async function register() {
         process.exit(1);
     }
     if (real.banner) console.warn(REAL_BANNER);
+    // Lot « Avis », phase 2 (C3) : en production, adresse de l'application de 27 caractères au plus (SMS d'un seul segment)
+    const { appUrlStartupProblem } = await import('./lib/notifications/app-url-guard');
+    const urlProblem = appUrlStartupProblem(process.env);
+    if (urlProblem) {
+        console.error(urlProblem);
+        process.exit(1);
+    }
     // Lot 9 quater (F3 : AUD-39) : en production réelle, aucune origine push en http ni sur un hôte local
     const { pushOriginsStartupProblem } = await import('./lib/push/endpoints');
     const pushProblem = pushOriginsStartupProblem(process.env);

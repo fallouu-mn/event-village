@@ -903,9 +903,9 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['CATEGORY_SOLD_OUT', { ...ev, category: 'VIP' }, [], `Event Village : la catégorie VIP de Gala Dakar est complète. ${U}/partner/events`],
             ['EVENT_SOLD_OUT', ev, [], `Event Village : Gala Dakar est complet, toutes les catégories sont vendues. ${U}/partner/events`],
             ['SHIFT_DISCREPANCY', { ...ev, controller_name: 'Fatou Sow', difference: -2500 }, [],
-                `Event Village : caisse de Fatou Sow fermée (Gala Dakar). Il manque 2 500 F CFA. ${U}/partner/events`], // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
+                `Event Village : caisse de Fatou S. fermée (Gala Dakar). Il manque 2 500 F CFA. ${U}/partner/events`], // avis phase 2 (2h, C1, décision D3 ; modification signalée) : prénom et initiale, avant « Fatou Sow » // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
             ['SHIFT_DISCREPANCY', { ...ev, controller_name: 'Fatou Sow', difference: 1000 }, [],
-                `Event Village : caisse de Fatou Sow fermée (Gala Dakar). 1 000 F CFA de trop. ${U}/partner/events`],
+                `Event Village : caisse de Fatou S. fermée (Gala Dakar). 1 000 F CFA de trop. ${U}/partner/events`], // avis phase 2 (2h, C1, décision D3 ; modification signalée) : prénom et initiale, avant « Fatou Sow »
             ['WITHDRAWAL_PAID', { amount: 25000, operator: 'WAVE' }, [], 'Event Village : votre retrait de 25 000 F CFA a été versé sur votre compte Wave.'],
             ['WITHDRAWAL_REJECTED', { amount: 25000, operator: 'WAVE' }, [],
                 'Event Village : votre retrait de 25 000 F CFA a été refusé par l\'opérateur. Le montant est revenu sur votre solde.'],
@@ -1078,13 +1078,13 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['SCAN_REFUSALS_ALERT', {}, [],
                 `Event Village : Porte B : 12 refus en 5 min pour Gala de la Teranga. Vérifiez cette porte avec votre équipe. ${U}/partner/events`],
             ['CONTROLLER_INVITATION_ACCEPTED', {}, [],
-                `Event Village : Aminata Fall a accepté de scanner les billets à vos entrées. Choisissez sa porte : ${U}/partner/team`],
+                `Event Village : Aminata F. a accepté de scanner les billets à vos entrées. Choisissez sa porte : ${U}/partner/team`], // avis phase 2 (2h, C1, D3 ; signalé) : avant « Aminata Fall »
             ['CONTROLLER_INVITATION_DECLINED', {}, [],
                 `Event Village : Ou*** B*** a refusé de scanner les billets à vos entrées. Invitez une autre personne : ${U}/partner/team`],
             ['CONTROLLER_INVITATION_EXPIRED', {}, [],
                 `Event Village : Kh*** S*** n'a pas répondu à votre invitation à scanner les billets. Invitez de nouveau : ${U}/partner/team`],
             ['CONTROLLER_BECAME_ADMIN', {}, [],
-                `Event Village : Aminata Fall ne fait plus partie de votre équipe d'entrée. Invitez une autre personne : ${U}/partner/team`],
+                `Event Village : Aminata F. ne fait plus partie de votre équipe d'entrée. Invitez une autre personne : ${U}/partner/team`], // avis phase 2 (2h, C1, D3 ; signalé) : avant « Aminata Fall »
             ['CASH_REFUND_MARKED_BY_ADMIN', {}, [],
                 `Event Village : l'administration a marqué rendues les espèces de la vente 1F6E2B9C (6 000 F CFA) pour Gala de la Teranga.`],
             ['SALES_UPDATE_SMS', {}, [],
@@ -1131,7 +1131,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['PAYMENT_NOT_COMPLETED', {target: 'SUBSCRIPTION'}, NO_EVENT_KEYS,
                 `Event Village : paiement non abouti pour votre abonnement. Rien n'a été débité. Réessayez : ${U}/partner/subscription`],
             ['ACCOUNT_ANONYMIZATION_NOTICE', {}, [],
-                `Event Village : votre compte est supprimé par l'équipe, vos informations personnelles vont être effacées. Une question : ${U}/aide`],
+                `Event Village : votre compte est supprimé par l'équipe, vos informations personnelles sont effacées. Une question : ${U}/aide`],
             // 2d : SMS regroupés des administrateurs (B8, B9)
             ['ADMIN_MONEY_SMS', {}, [],
                 `Event Village : argent à vérifier : 2 versements à reprendre, 1 incertain, 1 double paiement, 1 créance. ${U}/admin/finance`],

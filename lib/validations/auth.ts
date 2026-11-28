@@ -164,7 +164,7 @@ export type RegisterWithCodeInput = z.infer<typeof RegisterWithCodeSchema>;
  */
 export const VerifyOtpSchema = z.object({
     phone: SenegalesePhoneSchema,
-    token: z.string().length(6, 'Le code OTP doit comporter exactement 6 chiffres'),
+    token: z.string().length(6, 'Le code reçu par SMS comporte 6 chiffres.'),
     type: z.enum(['sms', 'signup', 'recovery', 'magiclink']).default('sms'),
 });
 

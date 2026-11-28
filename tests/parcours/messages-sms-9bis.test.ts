@@ -217,7 +217,8 @@ describe('9b.39 R28 : libellé de supervision du SMS de 3 heures remplacé par l
         assert.ok(reasons && typeof reasons === 'object', 'lib/notifications/outbox-labels.ts : OUTBOX_REASON_LABELS exporté');
         const label = String(reasons.PUSH_DELIVERED ?? '').replace(/[\u00a0\u202f]/g, ' ');
         assert.doesNotMatch(label, /remis/i, `le libellé ne dit plus que le push est remis : « ${label} »`);
-        assert.equal(label, 'Push accepté par le service, SMS non envoyé (affichage non garanti)', 'libellé du contrat (11.2, R28)');
+        // Lot « Avis », phase 2 (2h, M16 ; modification signalée) : avant « Push accepté par le service, SMS non envoyé (affichage non garanti) »
+        assert.equal(label, 'Notification du téléphone acceptée par le service, SMS non envoyé (affichage non garanti)', 'libellé du contrat (11.2, R28)');
         const page = fs.readFileSync(path.join(process.cwd(), 'app', 'admin', 'notifications', '[id]', 'page.tsx'), 'utf8');
         assert.match(page, /SMS seulement si le push n['’]est pas accepté par le service push/, 'détail de la page admin (contrat 5.39, écran E-D)');
         assert.doesNotMatch(page, /notification push remise/, 'ancien détail retiré');

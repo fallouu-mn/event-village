@@ -42,7 +42,7 @@ async function readJson(req: NextRequest): Promise<{ ok: true; body: unknown } |
     try {
         return { ok: true, body: await req.json() };
     } catch {
-        return { ok: false, response: NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 }) };
+        return { ok: false, response: NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 }) };
     }
 }
 
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     const config = getPushConfig();
     if (!config.enabled) {
         return NextResponse.json(
-            { error: 'Les notifications push ne sont pas disponibles pour le moment.', code: 'PUSH_NOT_CONFIGURED' },
+            { error: 'Les notifications du téléphone ne sont pas disponibles pour le moment.', code: 'PUSH_NOT_CONFIGURED' },
             { status: 409 },
         );
     }

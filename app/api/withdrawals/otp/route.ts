@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         body = await req.json();
     } catch (parseErr) {
         console.error(`[${CONTEXT}] corps illisible :`, parseErr instanceof Error ? parseErr.message : String(parseErr));
-        return NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) {

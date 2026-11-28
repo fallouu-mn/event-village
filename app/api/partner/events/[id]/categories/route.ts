@@ -28,7 +28,7 @@ export async function POST(
     try {
         body = await request.json();
     } catch {
-        return NextResponse.json({ success: false, error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_BODY' }, { status: 400 });
     }
 
     try {

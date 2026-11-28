@@ -483,8 +483,9 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         const fmt = await smsFormat();
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows, new Date());
-        assertSms(sent, p.phoneE164, mark, `Event Village : caisse de Ibrahima Controleur fermée (${ev.title}). ${fmt.smsAmount(2_500)} de trop. ${APP_URL}/partner/events`); // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
-        await assertInApp(sent, { userId: p.userId, title: 'Écart de caisse', contains: ['Ibrahima Controleur', ev.title, JUSTIFICATION], actionUrl: `/partner/events/${ev.eventId}?tab=caisse` });
+        assertSms(sent, p.phoneE164, mark, `Event Village : caisse de Ibrahima C. fermée (${ev.title}). ${fmt.smsAmount(2_500)} de trop. ${APP_URL}/partner/events`); // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
+        // Lot « Avis », phase 2 (2h, C1, décision D3 ; modification signalée) : prénom et initiale, avant « Ibrahima Controleur »
+        await assertInApp(sent, { userId: p.userId, title: 'Écart de caisse', contains: ['Ibrahima C.', ev.title, JUSTIFICATION], actionUrl: `/partner/events/${ev.eventId}?tab=caisse` });
 
         const res2 = await invoke(closeRoute as Handler, authed('/api/controller/shifts/close', 'POST', clean.ctrl, { shiftId: clean.shiftId, declaredCashTotal: clean.expected }));
         assert.equal(res2.status, 200, `clôture sans écart : ${show(res2)}`);

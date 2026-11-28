@@ -69,7 +69,7 @@ export async function PATCH(
         try {
             body = await req.json();
         } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.', code: 'INVALID_INPUT' }, { status: 400 });
+            return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.', code: 'INVALID_INPUT' }, { status: 400 });
         }
 
         const newStatus = body.status;

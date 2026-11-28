@@ -495,10 +495,10 @@ async function deliverPush(item: ClaimedItem, data: Record<string, unknown>, ctx
 
     const delivery = { devices };
     if (accepted > 0) return { ...base(item), outcome: 'SENT', delivery };
-    if (retryable > 0) return retry(item, 'PUSH_PROVIDER_ERROR', 'Service push momentanément indisponible.', retryAfter, delivery);
+    if (retryable > 0) return retry(item, 'PUSH_PROVIDER_ERROR', 'Service des notifications du téléphone momentanément indisponible.', retryAfter, delivery);
     if (tooLarge === 0 && rejected === 0) return skipped(item, 'NO_PUSH_SUBSCRIPTION', gone > 0 ? 'Abonnements expirés supprimés.' : 'Aucun appareil autorisé.', delivery);
-    if (tooLarge > 0) return failed(item, 'PUSH_PAYLOAD_TOO_LARGE', 'Charge refusée par le service push (413).', delivery);
-    return failed(item, 'PUSH_REJECTED', 'Notification refusée par le service push.', delivery);
+    if (tooLarge > 0) return failed(item, 'PUSH_PAYLOAD_TOO_LARGE', 'Message trop long pour le service des notifications du téléphone.', delivery);
+    return failed(item, 'PUSH_REJECTED', 'Notification refusée par le service des notifications du téléphone.', delivery);
 }
 
 async function deliver(item: ClaimedItem, ctx: RenderCtx, now: Date): Promise<MarkResult> {

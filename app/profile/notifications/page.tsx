@@ -247,7 +247,7 @@ export default function NotificationPreferencesPage() {
         <EmptyState
           icon={<LogIn size={28} />}
           title="Connectez-vous pour régler vos notifications"
-          description="Vos préférences de rappels, de SMS et de notifications push sont liées à votre compte."
+          description="Vos préférences de rappels, de SMS et de notifications du téléphone sont liées à votre compte."
           actionLabel="Se connecter"
           actionHref="/login?redirect=%2Fprofile%2Fnotifications"
         />

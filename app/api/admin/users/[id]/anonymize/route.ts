@@ -22,7 +22,7 @@ async function handleAnonymize(
         const userId = params?.id;
 
         if (!userId) {
-            return NextResponse.json({ error: 'ID utilisateur requis.' }, { status: 400 });
+            return NextResponse.json({ error: 'Compte introuvable. Rechargez la page.' }, { status: 400 });
         }
 
         const result = await AdminService.anonymizeUser(userId, {

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const page = positiveInt(params.get('page'));
     const pageSize = positiveInt(params.get('pageSize'));
     if (Number.isNaN(page) || Number.isNaN(pageSize)) {
-        return NextResponse.json({ error: 'Pagination invalide : page et pageSize sont des entiers positifs.', code: 'INVALID_PAGINATION' }, { status: 400 });
+        return NextResponse.json({ error: 'Page demandée invalide. Rechargez la page.', code: 'INVALID_PAGINATION' }, { status: 400 });
     }
     const q = (params.get('q') ?? '').trim().slice(0, 100);
 

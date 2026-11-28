@@ -94,7 +94,7 @@ export async function PUT(req: NextRequest) {
     try {
         body = await req.json();
     } catch {
-        return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+        return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
     }
     const parsed = PutSchema.safeParse(body);
     if (!parsed.success) {

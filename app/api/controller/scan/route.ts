@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
     const read = await readBody(req);
     const limited = await scanQuota(user.id, read?.eventId ?? null, 'scan', 'scan_scanner', 10, env.SCAN_PER_SCANNER_10S);
     if (limited) return limited;
-    if (!read) return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    if (!read) return NextResponse.json({ error: 'Demande illisible. Rechargez la page, puis réessayez.' }, { status: 400 });
     const clientKey = req.headers.get('idempotency-key')?.trim() ?? '';
     if (!IDEMPOTENCY_KEY.test(clientKey)) {
         return NextResponse.json({ error: 'Clé d’idempotence manquante ou invalide.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
@@ -189,13 +189,13 @@ export async function POST(req: NextRequest) {
     }
     const replay = replayFlag === 'replay' ? ReplaySchema.safeParse(body) : null;
     if (replay && !replay.success) {
-        return NextResponse.json({ error: 'Scan invalide : eventId requis.', code: 'INVALID_EVENT_ID' }, { status: 400 });
+        return NextResponse.json({ error: 'Événement introuvable. Rechargez la page.', code: 'INVALID_EVENT_ID' }, { status: 400 });
     }
     const camera = replay ? null : CameraSchema.safeParse(body);
     const guest = replay || camera?.success ? null : GuestSchema.safeParse(body);
     const manual = replay || camera?.success || guest?.success ? null : ManualSchema.safeParse(body);
     if (!replay && !camera?.success && !guest?.success && !manual?.success) {
-        return NextResponse.json({ error: 'Scan invalide : eventId et payload (ou manualTicketNumber, ou guestTicketId) requis.' }, { status: 400 });
+        return NextResponse.json({ error: 'Scan illisible. Scannez de nouveau ou tapez le numéro du billet.' }, { status: 400 });
     }
 
     const p: Record<string, unknown> = { scanner_id: user.id, client_key: clientKey };

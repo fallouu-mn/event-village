@@ -64,7 +64,8 @@ const STATUS_LABELS: Record<OutboxStatus, string> = {
     CANCELLED: 'Annulée',
     UNCERTAIN: 'Incertaine',
 };
-const CHANNEL_LABELS: Record<string, string> = { IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notification push' };
+// Lot « Avis », phase 2 (2h, M16 ; modification signalée) : « Notification du téléphone », avant « Notification push »
+const CHANNEL_LABELS: Record<string, string> = { IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notification du téléphone' };
 /** Motifs du contrat C4 (liste fermée). */
 const REASONS = [
     'PREFERENCE_DISABLED', 'ACCOUNT_SUSPENDED', 'QUIET_HOURS', 'NO_PHONE', 'NO_REAL_EMAIL', 'EMAIL_NOT_CONFIGURED', 'PUSH_NOT_CONFIGURED',
