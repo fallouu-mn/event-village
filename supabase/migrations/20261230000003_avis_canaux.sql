@@ -232,6 +232,12 @@ BEGIN
     SELECT max(o.due_at) INTO v_last
       FROM public.notification_outbox o
      WHERE o.type = v_type AND left(o.group_key, length(v_prefix)) = v_prefix;
+    -- Avis phase 2 (2a, B14) : l'échéance de la série suit les cloches, jamais la notification reportée à la fin de la nuit
+    IF v_type = 'NEW_ORDER' THEN
+        SELECT max(o.due_at) INTO v_last
+          FROM public.notification_outbox o
+         WHERE o.type = v_type AND left(o.group_key, length(v_prefix)) = v_prefix AND o.channel <> 'PUSH';
+    END IF;
     v_due := GREATEST(v_now, COALESCE(v_last + make_interval(mins => v_window), v_now),
                       COALESCE(NULLIF(p->>'not_before', '')::timestamptz, v_now));
     RETURN public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(

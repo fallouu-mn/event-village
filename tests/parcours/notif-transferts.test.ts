@@ -334,7 +334,10 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         await dispatchAt(new Date(), { ids: [...sender, ...received].map((r) => r.id) });
         // Finition 4 : un SMS à l'expéditeur (reporté à 07:00 s'il est préparé la nuit), aucun au destinataire (il vient d'accepter)
         assert.ok(smsTo(owner.phoneE164, mark).length <= 1, 'au plus un SMS à l’expéditeur');
-        assert.equal(smsTo(to.phoneE164, markTo).length, 0, 'aucun SMS au destinataire après l’acceptation');
+        // Lot « Avis », phase 2 (modification signalée au rapport) : B1, le destinataire reçoit le SMS « billet reçu » (avant : aucun SMS)
+        const toSms = smsTo(to.phoneE164, markTo);
+        assert.equal(toSms.length, 1, 'un seul SMS au destinataire après l’acceptation : billet reçu');
+        assert.match(toSms[0].message, /est dans vos billets, avec un nouveau numéro\./, toSms[0].message);
 
         const again = await claim(to, id);
         assert.equal(again.status, 409, `second appel : ${show(again)}`);

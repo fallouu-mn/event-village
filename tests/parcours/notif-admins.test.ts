@@ -329,7 +329,7 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
         // Lot « Avis », phase 2 (modification signalée au rapport) : + notification (B11)
         const rows = await adminAlert('ADMIN_SMS_OPTIONAL_80', `ADMIN_SMS_OPTIONAL_80:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP', 'PUSH']);
         const perAdmin = rows.filter((r) => r.recipient_user_id === superadmin.userId);
-        assert.equal(perAdmin.length, 2, 'une alerte par canal pour le jour, même après deux contrôles');
+        assert.equal(perAdmin.length, 3, 'une alerte par canal pour le jour (cloche, email, notification), même après deux contrôles');
         for (const r of perAdmin) {
             assert.deepEqual({ day: r.template_data.day, cap: Number(r.template_data.cap), threshold: Number(r.template_data.threshold) }, { day, cap: 1, threshold: 1 }, `données de l'alerte : ${JSON.stringify(r.template_data)}`);
         }

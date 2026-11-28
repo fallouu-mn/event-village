@@ -88,7 +88,8 @@ describe('A1 — essais de mot de passe limités par compte', () => {
         // Lot « Avis », phase 2 (modification signalée au rapport) : + cloche et notification (B4)
         assert.deepEqual(rows.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `avis du 10e échec : ${JSON.stringify(rows.map((r) => [r.channel, r.status]))}`);
         await failTimes(target.phoneE164, 5);
-        assert.equal((await outboxRows({ type: 'ACCOUNT_LOGIN_FAILURES', userId: target.userId })).length, 2, 'aucun avis de plus le même jour');
+        // Lot « Avis », phase 2 (modification signalée au rapport) : même nombre de lignes qu'après le 10e échec (4 canaux, avant 2)
+        assert.equal((await outboxRows({ type: 'ACCOUNT_LOGIN_FAILURES', userId: target.userId })).length, rows.length, 'aucun avis de plus le même jour');
         const before = getFakes().sms.messagesTo(target.phoneE164).length;
         await dispatchAt(new Date(), { ids: rows.filter((r) => r.channel === 'SMS').map((r) => r.id) });
         assert.deepEqual(getFakes().sms.messagesTo(target.phoneE164).slice(before).map((m) => m.message), [
