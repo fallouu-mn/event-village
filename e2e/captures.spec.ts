@@ -43,7 +43,7 @@ import type { PageGuard } from './support/network';
 import { SCREENS, type CaptureView, type Screen, type StubResponse } from './support/screens';
 import { keepHomeOutOfServicesWindow } from './support/services-switch';
 import { readTheme, themeProblem } from './support/theme-check';
-import { watchHydration } from './support/hydration';
+import { formatProbe, installHydrationProbe, readProbe, watchHydration } from './support/hydration';
 
 /** Abonné neuf du faux service push (clés P-256 réelles), pour l'état « activé » simulé. */
 async function fakePushSubscriber(): Promise<FakePushSubscriptionJson> {
@@ -223,6 +223,8 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
             }
             const demo: DemoIds | null = screen.needsIds ? readDemoIds() : null;
             record.url = screen.path(demo);
+            // Lot stabilité : sonde de diagnostic de l'hydratation (endroit de l'écart, imprimé au journal en cas d'erreur)
+            await installHydrationProbe(context);
             guard.configure({
                 allowFailures: [...(screen.allowFailures ?? []), ...(screen.injectError ? [screen.injectError] : [])],
                 ignoreConsoleErrors: Boolean(screen.injectError),
@@ -342,6 +344,12 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
             throw err;
         } finally {
             record.blocking.push(...hydration.errors.map((h) => `erreur d'hydratation sur ${screen.id} (${vue}, ${theme.key}) : ${h}`));
+            if (hydration.errors.length > 0 && !page.isClosed()) {
+                const report = formatProbe(await readProbe(page).catch((err: unknown) => ({ mismatches: [{ erreurSonde: String(err) }], writes: [] })));
+                console.log(`[hydratation] sonde · ${file}
+${report}`);
+                record.notes.push(`sonde d'hydratation : ${report.slice(0, 4000)}`);
+            }
             record.blocking.push(...guard.blockingIssues());
             record.warnings.push(...guard.nonBlockingIssues());
             record.durationMs = Date.now() - started;

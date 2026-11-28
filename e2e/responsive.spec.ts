@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, type CaptureRole, type ThemeKey } from './support/fixtures';
-import { watchHydration } from './support/hydration';
+import { formatProbe, installHydrationProbe, readProbe, watchHydration } from './support/hydration';
 import { readDemoIds, E2E_OUTPUT_DIR, type DemoIds } from './support/demo-ids';
 import { fakeScanMode, installFakeCamera } from './support/fake-camera';
 import {
@@ -94,6 +94,8 @@ for (const theme of THEMES) {
                         // page en échec, avec son nom et la largeur (les autres erreurs de la page restent notées)
                         const hydration = watchHydration(page);
                         let hydrationSeen = 0;
+                        // Sonde de diagnostic (e2e/support/hydration.ts) : endroit de l'écart, imprimé au journal en cas d'erreur
+                        await installHydrationProbe(context);
                         for (const size of sizesFor(p, theme.key)) {
                             const at = size.paysage ? `${size.width}×${size.height} px (paysage)` : `${size.width} px`;
                             await page.setViewportSize({ width: size.width, height: size.height });
@@ -109,6 +111,8 @@ for (const theme of THEMES) {
                             const themeIssue = themeProblem(await readTheme(page), theme.key, at);
                             if (themeIssue) blocking.push(themeIssue);
                             for (const h of hydration.since(hydrationSeen)) blocking.push(`erreur d'hydratation sur ${p.id} à ${at} : ${h}`);
+                            if (hydration.since(hydrationSeen).length > 0) console.log(`[hydratation] sonde · ${p.id} · ${theme.key} · ${at}
+${formatProbe(await readProbe(page))}`);
                             hydrationSeen = hydration.mark();
                             let capture: string | null = null;
                             if (size.paysage || RESPONSIVE_CAPTURE_WIDTHS.includes(size.width)) {
