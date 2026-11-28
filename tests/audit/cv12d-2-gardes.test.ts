@@ -301,7 +301,7 @@ describe('G12-G14. Accès', () => {
             assert.equal(close.ok, true, JSON.stringify(close));
         }
         const fourth = await post(w.client.accessToken, id, { reason: 'RETARD' });
-        assert.deepEqual([fourth.status, fourth.body.code], [409, 'TOO_MANY_ISSUES'], fourth.text);
+        assert.deepEqual([fourth.status, fourth.body.code], [429, 'TOO_MANY_ISSUES'], fourth.text);
         assert.equal((await partnerAct(w.partner, id, { action: 'CONFIER', courierId: w.courier.userId })).status, 200);
         assert.equal((await courierAct(w.courier, id, { action: 'EN_ROUTE', minutes: 20 })).status, 200);
         assert.equal((await courierAct(w.courier, id, { action: 'REMETTRE', code: await codeOf(w.client, id) })).status, 200);

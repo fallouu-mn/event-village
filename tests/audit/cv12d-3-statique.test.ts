@@ -4,6 +4,9 @@
  *  T4. ORDER_ABSENCE_DECIDED_PRO exclu de la règle G.49 (email) comme « petite étape », alors qu'il annonce à la
  *      partenaire un remboursement repris sur sa part (part faciale de order_refund_payment) : même nature que
  *      ORDER_CANCELLED_PRO, qui a ses 4 canaux.
+ *  F1. Fusion avec le lot avis : la recopie d’order_create_checked sort ORDER_PRICE_CHANGED du fichier exempté par le
+ *      garde-fou des mots du lot avis (design1b-mots, bloc e) : la fusion le rend rouge.
+ *  F2. Fusion avec le lot avis : le SMS ORDER_COURIER_INVITED (B6) mène à /courier/invitations, page absente du 12d.
  *  S1. Aucune route ni module serveur n'appelle order_create ou order_quote_compute directement (la pause se contourne
  *      sinon) : seulement order_create_checked et order_quote.
  *  S2. Recopies : chaque fonction recopiée une seule fois dans le lot ; lignes de la dernière définition toutes gardées,
@@ -45,6 +48,26 @@ describe('T4. Règle G.49 : avis d’argent à la partenaire', () => {
         assert.match(refund, /Part de la partenaire \(prix moins commission\) rendue par la partenaire/, 'part faciale reprise sur la partenaire');
         assert.deepEqual([...CATALOG.ORDER_ABSENCE_DECIDED_PRO.channels].sort(), ['EMAIL', 'IN_APP', 'PUSH'].sort(),
             `ORDER_ABSENCE_DECIDED_PRO : ${JSON.stringify(CATALOG.ORDER_ABSENCE_DECIDED_PRO.channels)}`);
+    });
+});
+
+describe('F1-F2. Fusion avec le lot « Avis » phase 2 (origin/avis/phase2, non fusionné)', () => {
+    test('F1. le code interne ORDER_PRICE_CHANGED de la dernière définition d’order_create_checked reste dans le fichier exempté par le garde-fou des mots du lot avis', () => {
+        // tests/schema/design1b-mots.test.ts du lot avis (bloc e, messages SQL de la DERNIÈRE définition) exempte la paire
+        // « 20261226000003_l12b_garde_prix.sql|ORDER_PRICE_CHANGED » (exemption par fichier, recopiée ici telle quelle)
+        const exempt = new Set(['20261226000003_l12b_garde_prix.sql|ORDER_PRICE_CHANGED']);
+        const all = readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort();
+        const defs = all.filter((f) => readFileSync(join(MIG, f), 'utf8').includes('CREATE OR REPLACE FUNCTION public.order_create_checked('));
+        const last = defs[defs.length - 1];
+        const raw = fnBody(last, 'public.order_create_checked').some((l) => /MESSAGE\s*=\s*'ORDER_PRICE_CHANGED'/.test(l));
+        assert.equal(!raw || exempt.has(`${last}|ORDER_PRICE_CHANGED`), true,
+            `après fusion, design1b-mots signalera « public.order_create_checked (${last}) : code brut ORDER_PRICE_CHANGED »`);
+    });
+
+    test('F2. le SMS d’invitation d’un livreur du lot avis (B6) mène à /courier/invitations : la page existe', () => {
+        const page = ['page.tsx', 'page.ts'].map((f) => join(ROOT, 'app', 'courier', 'invitations', f));
+        assert.ok(page.some((p) => { try { return statSync(p).isFile(); } catch { return false; } }),
+            'app/courier/invitations/page.tsx absente : le lien du SMS ORDER_COURIER_INVITED du lot avis tombe sur une page introuvable');
     });
 });
 

@@ -10,17 +10,21 @@
  *  T2.  Client : colonnes nouvelles d'orders (absent_decided_by, delivery_calls…) et auteur des étapes
  *       (order_state_history.actor_id) lisibles par la REST : identifiant de l'administrateur qui a décidé.
  *  T3.  Pause : une commande créée juste avant la pause se paie pendant la pause et arrive à l'établissement (RECUE).
+ *  T5.  Livreur : adresse du client (et consignes) lue avant le départ, dès que la commande lui est confiée (point 4 de
+ *       la consigne : « téléphone et adresse du client jamais avant le départ ») ; le lot ne retient que le téléphone.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GET as servicesGet } from '../../app/api/admin/services/route';
+import { GET as courierDayGet } from '../../app/api/courier/orders/route';
+import { GET as courierOrderGet } from '../../app/api/courier/orders/[id]/route';
 import { assertLot12aInvariants } from '../helpers/lot12a-invariants';
 import { deliverWebhook, providerSays } from '../parcours/paiement-helpers';
 import {
     newProduct, newShop, openOrdersService, order, orderBody, placed, releaseUnpaid, startOrderPay, userClient, type Row,
 } from '../parcours/l12a-helpers';
-import { buildWorld, closeIfOpen, delivered, escalated, reply, req, rpc, type World } from './cv12d-aides';
+import { buildWorld, closeIfOpen, ctx, delivered, escalated, reply, req, rpc, type World } from './cv12d-aides';
 
 let restore: () => Promise<void>;
 let w: World;
@@ -114,6 +118,24 @@ describe('T3. Pause contournée par le paiement', () => {
             assert.equal(resume.ok, true, JSON.stringify(resume));
             await closeIfOpen(w, id);
             await releaseUnpaid(w.client.userId);
+        }
+    });
+});
+
+describe('T5. Adresse du client lue par le livreur avant le départ', () => {
+    test('commande confiée, prête, pas encore partie : ni adresse ni consignes dans le détail ni dans la journée du livreur', async () => {
+        const id = await delivered(w, { go: false });
+        try {
+            const view = await reply(await courierOrderGet(req(`/api/courier/orders/${id}`, 'GET', w.courier.accessToken), ctx(id)));
+            const day = await reply(await courierDayGet(req('/api/courier/orders', 'GET', w.courier.accessToken)));
+            assert.equal(view.status, 200, view.text);
+            const leaks: string[] = [];
+            const contact = (view.body.order as Row).contact as Row | undefined;
+            if (contact?.address) leaks.push(`détail : ${JSON.stringify(contact)}`);
+            if (/Villa 12, route des Almadies/.test(day.text)) leaks.push('journée : adresse du client');
+            assert.deepEqual(leaks, [], `avant « Je pars » (état ${String((view.body.order as Row).state)}) : ${leaks.join(' ; ')}`);
+        } finally {
+            await closeIfOpen(w, id);
         }
     });
 });
