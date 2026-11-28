@@ -7,6 +7,7 @@
  *  F1. Fusion avec le lot avis : la recopie d’order_create_checked sort ORDER_PRICE_CHANGED du fichier exempté par le
  *      garde-fou des mots du lot avis (design1b-mots, bloc e) : la fusion le rend rouge.
  *  F2. Fusion avec le lot avis : le SMS ORDER_COURIER_INVITED (B6) mène à /courier/invitations, page absente du 12d.
+ *  F3. Renommer les migrations du 12d (si le lot avis fusionne d'abord) : son test « rejouable » code les noms en dur.
  *  S1. Aucune route ni module serveur n'appelle order_create ou order_quote_compute directement (la pause se contourne
  *      sinon) : seulement order_create_checked et order_quote.
  *  S2. Recopies : chaque fonction recopiée une seule fois dans le lot ; lignes de la dernière définition toutes gardées,
@@ -68,6 +69,13 @@ describe('F1-F2. Fusion avec le lot « Avis » phase 2 (origin/avis/phase2, non 
         const page = ['page.tsx', 'page.ts'].map((f) => join(ROOT, 'app', 'courier', 'invitations', f));
         assert.ok(page.some((p) => { try { return statSync(p).isFile(); } catch { return false; } }),
             'app/courier/invitations/page.tsx absente : le lien du SMS ORDER_COURIER_INVITED du lot avis tombe sur une page introuvable');
+    });
+
+    test('F3. le test « rejouable » du lot ne dépend pas des numéros de migration (renommage au-dessus du lot avis possible)', () => {
+        // Rapport du lot, § 1 : « le test statique et le test « rejouable » repèrent les fichiers par _l12d_, sans dépendre des numéros »
+        const src = readFileSync(join(ROOT, 'tests', 'schema', 'migration-lot12d-rejouable.test.ts'), 'utf8');
+        const pinned = [...src.matchAll(/'(\d{14}_l12d_[a-z_]+\.sql)'/g)].map((m) => m[1]);
+        assert.deepEqual(pinned, [], `noms complets codés en dur : ${pinned.join(', ')}`);
     });
 });
 
