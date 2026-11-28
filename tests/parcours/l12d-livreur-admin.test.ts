@@ -464,6 +464,7 @@ describe('F. Administration : liste, fiche, données personnelles', () => {
         assert.deepEqual([m.people_visible, (m.client as Row).name, (m.client as Row).phone ?? null, m.admin_contact ?? null, m.can_cancel], [false, 'Khady S.', null, null, false]);
         assert.doesNotMatch(masked.text, /Sarrdiop|Villa 12|\+221/);
         assert.ok(Array.isArray(m.payments) && Array.isArray(m.timeline), 'paiements et frise');
+        assert.ok((m.timeline as Row[]).some((h) => h.to === 'EN_ROUTE' && h.by === 'LIVREUR'), `frise de la base (étape, auteur) : ${JSON.stringify(m.timeline)}`);
         const full = await reply(await adminOrderGet(req(`/api/admin/orders/${id}`, 'GET', adminPeople.accessToken), ctx(id)));
         const f = full.body.order as Row;
         assert.deepEqual([f.people_visible, (f.client as Row).name, (f.client as Row).phone, (f.admin_contact as Row).address, f.can_cancel],

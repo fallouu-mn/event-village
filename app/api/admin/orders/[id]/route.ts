@@ -21,7 +21,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         if (error) throw new Error(`order_admin_view : ${error.message}`);
         const r = data as Record<string, unknown>;
         if (r?.ok !== true) return orderRefusal(r, 'Commande momentanément indisponible.');
-        return NextResponse.json({ success: true, order: orderResponse(r.order as Record<string, unknown>) }, { headers: { 'Cache-Control': 'no-store' } });
+        const view = r.order as Record<string, unknown>;
+        // La frise de l'administration (étapes, auteur, note : order_admin_view) garde son nom : orderResponse poserait à la
+        // place la frise simplifiée du suivi du client
+        return NextResponse.json({ success: true, order: { ...orderResponse(view), timeline: view.timeline ?? [] } }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
         return apiFailure('GET /api/admin/orders/[id]', err, { message: 'Commande momentanément indisponible.', code: 'ADMIN_ORDER_UNAVAILABLE', status: 500 });
     }
