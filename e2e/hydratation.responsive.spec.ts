@@ -25,7 +25,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import type { Browser, BrowserContextOptions, Page, TestInfo } from '@playwright/test';
-import { test, expect, openAnonymousContext, type ThemeKey } from './support/fixtures';
+import { test, expect, openAnonymousContext, openRoleContext, type ThemeKey } from './support/fixtures';
 import { readDemoIds } from './support/demo-ids';
 import { cdpNetworkConditions, MOBILE, NET_4G } from './support/devices';
 import { formatProbe, installHydrationProbe, readProbe, watchHydration } from './support/hydration';
@@ -201,6 +201,71 @@ async function runScenario(browser: Browser, testInfo: TestInfo, theme: ThemeKey
         await context.close();
     }
     return failures;
+}
+
+/**
+ * Page tardive, services ouverts (run 787 : n° 418 sur /partner/calendar à 768 px, page dont le contenu n'est PAS rendu par
+ * le serveur : l'écart est dans le gabarit, ou dans une partie hydratée après la racine). Seuls les morceaux des pages et
+ * des gabarits de segment (/_next/static/chunks/app/…, sauf le gabarit racine) sont retardés : la racine s'hydrate, ses
+ * effets tournent (session lue, `mounted`, interrupteurs lus par GET /api/features), PUIS la page s'hydrate. Interrupteurs
+ * salles et tables ouverts (verrou des services) : une entrée de service n'est rendue que si l'interrupteur est lu.
+ */
+const LATE_PAGE_CHUNK = /\/_next\/static\/chunks\/app\/(?!layout-)[^?]+\.js(\?|$)/;
+
+interface LateCase { id: string; role: 'anonyme' | 'organisateur' | 'client'; path: () => string; ready: string }
+const LATE_PAGES: LateCase[] = [
+    { id: 'accueil', role: 'anonyme', path: () => '/', ready: '#accueil-titre' },
+    { id: 'explorer', role: 'anonyme', path: () => '/explore', ready: '#resultats-titre' },
+    { id: 'fiche-ce-soir', role: 'anonyme', path: () => `/events/${readDemoIds().events.ceSoir.id}`, ready: '#billetterie' },
+    { id: 'org-tableau-de-bord', role: 'organisateur', path: () => '/partner/dashboard', ready: 'h1' },
+    { id: 'org-calendrier', role: 'organisateur', path: () => '/partner/calendar', ready: 'h1' },
+    { id: 'client-commandes', role: 'client', path: () => '/orders', ready: 'h1' },
+];
+const LATE_DELAYS = [600, 2_500] as const;
+
+for (const theme of THEMES) {
+    for (const vp of VIEWPORTS) {
+        test(`hydratation · ${theme} · ${vp.id} px · page tardive, services ouverts : accueil, Explorer, fiche, tableau de bord et calendrier de l'organisatrice, commandes du client`, async ({ browser, servicesLock }, testInfo) => {
+            test.setTimeout(900_000);
+            await servicesLock.enter('services');
+            const failures: string[] = [];
+            let loads = 0;
+            for (const lc of LATE_PAGES) {
+                for (const delay of LATE_DELAYS) {
+                    const extra = { ...vp.options, timezoneId: BROWSER_TZ };
+                    const context = lc.role === 'anonyme'
+                        ? await openAnonymousContext(browser, testInfo, theme, extra)
+                        : await openRoleContext(browser, testInfo, lc.role, theme, extra);
+                    try {
+                        await installHydrationProbe(context);
+                        await context.route(LATE_PAGE_CHUNK, async (route) => {
+                            await new Promise((r) => setTimeout(r, delay));
+                            await route.fallback();
+                        });
+                        const p = await context.newPage();
+                        const watch = watchHydration(p);
+                        for (let passage = 1; passage <= 2; passage += 1) {
+                            const mark = watch.mark();
+                            if (passage === 1) await p.goto(lc.path(), { waitUntil: 'load' });
+                            else await p.reload({ waitUntil: 'load' });
+                            await waitHydrated(p, lc.ready);
+                            loads += 1;
+                            const errors = watch.since(mark);
+                            if (errors.length > 0) {
+                                const report = formatProbe(await readProbe(p));
+                                failures.push(`${theme} · ${vp.id} px · ${lc.id} (${lc.role}) · morceaux de page retardés de ${delay} ms · chargement ${passage}/2 :\n  ${errors.join('\n  ')}${report ? `\n${report}` : ''}`);
+                            }
+                        }
+                    } finally {
+                        await context.close();
+                    }
+                }
+            }
+            console.log(`[hydratation] page tardive · ${theme} · ${vp.id} px : ${loads} chargements, ${failures.length} en échec`);
+            for (const f of failures) console.log(`[hydratation] ÉCHEC ${f}`);
+            expect(failures, `erreurs d'hydratation, page tardive (${theme}, ${vp.id} px)`).toEqual([]);
+        });
+    }
 }
 
 for (const theme of THEMES) {
