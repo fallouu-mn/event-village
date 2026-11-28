@@ -90,6 +90,8 @@ export interface UserProfile {
     scanner_open?: boolean | null;
     /** Complément 14 : prochain instant où le menu « Scanner » peut changer (contrôleur seul). */
     scanner_next_change_at?: string | null;
+    /** Lot 12d : livreur ACTIF d'au moins une équipe — entrée « Mes livraisons » de la coquille (champ absent sinon). */
+    courier_active?: boolean;
     status: 'ACTIF' | 'SUSPENDU' | 'EN_ATTENTE';
     referral_status: 'STANDARD' | 'AMBASSADEUR';
     avatar_url?: string | null;

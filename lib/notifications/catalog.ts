@@ -2135,6 +2135,141 @@ const CATALOG = {
         },
         sample: { ...ORDER_SAMPLE_DATA, state: 'ACCEPTEE' },
     }),
+    // Lot 12d : livreur, client absent, signalements, fermetures et pause. Décision du client : étapes importantes sur les
+    // 4 canaux (SMS d'un segment au pire cas), petites étapes en cloche et notification du téléphone ; prénom et initiale
+    // seulement pour nommer une personne ; chaque avis mène à l'objet exact et dit quoi faire.
+    ORDER_COURIER_ANSWERED: define('ORDER_COURIER_ANSWERED', {
+        label: 'Réponse d’un livreur', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'ORDER',
+        link: () => '/partner/orders/livreurs',
+        inApp: (d) => {
+            const who = optText(d, 'courier_name') ?? 'La personne invitée';
+            return field(d, 'accepted') === true
+                ? { title: 'Livreur ajouté', content: `${who} a accepté de livrer vos commandes. Vous pouvez maintenant lui confier une livraison.` }
+                : { title: 'Invitation refusée', content: `${who} a refusé de livrer vos commandes. Invitez une autre personne depuis vos livreurs.` };
+        },
+        sample: { invitation_id: SAMPLE_ID.invitation, accepted: true, courier_name: 'Moussa D.' },
+    }),
+    ORDER_COURIER_REMOVED: define('ORDER_COURIER_REMOVED', {
+        label: 'Retiré d’une équipe de livraison', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'ORDER',
+        link: () => '/courier/orders',
+        inApp: (d) => {
+            const name = optText(d, 'partner_name');
+            return { title: 'Vous ne livrez plus', content: `${name ? q(name) : 'Un établissement'} vous a retiré de ses livreurs : ses commandes ne vous sont plus confiées. Une livraison déjà partie reste à terminer avec l’établissement.` };
+        },
+        sample: { invitation_id: SAMPLE_ID.invitation, partner_name: 'Chez Fatou, cuisine du Sénégal et grillades' },
+    }),
+    ORDER_COURIER_RETURN: define('ORDER_COURIER_RETURN', {
+        label: 'Client toujours absent', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: courierOrderLink,
+        inApp: (d) => ({
+            title: 'Rapportez la commande',
+            content: `Le client de la commande ${orderRef(d)} reste absent après 30 minutes. Rapportez la commande à ${venueName(d)} : l’équipe Event Village décide de la suite. S’il revient avant, vous pouvez encore la remettre avec son code.`,
+        }),
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER', state: 'EN_ROUTE' },
+    }),
+    ORDER_CLIENT_ABSENT: define('ORDER_CLIENT_ABSENT', {
+        label: 'Livreur sans réponse', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Le livreur n’arrive pas à vous joindre',
+            content: `Le livreur de votre commande ${orderRef(d)} vous a appelé deux fois sans réponse. Il attend jusqu’à ${formatTime(iso(d, 'wait_until'))} : rappelez le numéro qui vous a appelé et donnez-lui votre code. Ensuite, l’équipe Event Village décide de la suite.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)}, le livreur n'a pas pu vous joindre. Il attend jusqu'à ${smsTime(iso(d, 'wait_until'))} : rappelez le numéro qui vous a appelé.`,
+        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', wait_until: '2026-12-05T13:15:00Z' },
+    }),
+    ORDER_CLIENT_ABSENT_PRO: define('ORDER_CLIENT_ABSENT_PRO', {
+        label: 'Client absent à la livraison', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => ({
+            title: 'Client absent',
+            content: `Votre livreur ne joint pas le client de la commande ${orderRef(d)}. Il attend jusqu’à ${formatTime(iso(d, 'wait_until'))} ; ensuite, l’équipe Event Village décide de la suite et vous prévient.`,
+        }),
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', state: 'EN_ROUTE', wait_until: '2026-12-05T13:15:00Z' },
+    }),
+    ORDER_ABSENCE_DECIDED: define('ORDER_ABSENCE_DECIDED', {
+        label: 'Décision après une absence', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const reason = optText(d, 'reason');
+            const refund = num(d, 'refund_amount') > 0
+                ? `Vous êtes remboursé de ${money(d, 'refund_amount')} sur votre compte de paiement.`
+                : 'Aucun remboursement n’est fait.';
+            return {
+                title: 'Commande non livrée',
+                content: `Votre commande ${orderRef(d)} n’a pas pu vous être remise : vous étiez absent. ${refund}${reason ? ` Motif : ${sentence(reason)}` : ''}`,
+            };
+        },
+        sms: (d) => (num(d, 'refund_amount') > 0
+            ? `${SMS_PREFIX}commande ${orderRef(d)} non livrée, client absent. Remboursement de ${smsAmount(num(d, 'refund_amount'))} en cours.`
+            : `${SMS_PREFIX}commande ${orderRef(d)} non livrée, client absent. Aucun remboursement : motif dans l'application.`),
+        sample: { ...ORDER_SAMPLE_DATA, state: 'NON_RETIREE', origin: 'EVENT_VILLAGE', refund_amount: 656_250, decision: 'PART', reason: 'Le client a rappelé après le départ du livreur.' },
+    }),
+    ORDER_ABSENCE_DECIDED_PRO: define('ORDER_ABSENCE_DECIDED_PRO', {
+        label: 'Décision après une absence (établissement)', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => {
+            const reason = optText(d, 'reason');
+            return {
+                title: 'Absence du client : décision',
+                content: `Commande ${orderRef(d)} close après l’absence du client. ${num(d, 'refund_amount') > 0 ? `Le client est remboursé de ${money(d, 'refund_amount')}.` : 'Le client n’est pas remboursé.'}${reason ? ` Motif : ${sentence(reason)}` : ''}`,
+            };
+        },
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', state: 'NON_RETIREE', origin: 'EVENT_VILLAGE', refund_amount: 0, decision: 'RIEN', reason: 'Deux appels et une attente de 30 minutes sans réponse.' },
+    }),
+    ORDER_ISSUE_PRO: define('ORDER_ISSUE_PRO', {
+        label: 'Problème signalé par un client', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => ({
+            title: 'Problème signalé',
+            content: `Le client de la commande ${orderRef(d)} signale ${orderIssueReason(d)}. L’équipe Event Village s’en occupe et peut vous contacter.`,
+        }),
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', state: 'EN_ROUTE', reason: 'RETARD' },
+    }),
+    ORDER_ISSUE_CLOSED: define('ORDER_ISSUE_CLOSED', {
+        label: 'Signalement traité', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Signalement traité',
+            content: `L’équipe Event Village a traité votre signalement sur la commande ${orderRef(d)}. Sa réponse est dans la commande.`,
+        }),
+        sample: { ...ORDER_SAMPLE_DATA, state: 'REMISE', reason: 'INCOMPLETE' },
+    }),
+    ORDER_CLOSURE_ORDERS: define('ORDER_CLOSURE_ORDERS', {
+        label: 'Commandes prévues pendant une fermeture', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: (d) => `/partner/tables/edition/${ident(d, 'venue_id')}/fermetures?fermeture=${ident(d, 'closure_id')}`,
+        inApp: (d) => {
+            const n = count(d, 'count');
+            return {
+                title: 'Commandes pendant la fermeture',
+                content: `${n > 1 ? `${formatInteger(n)} commandes sont prévues` : 'Une commande est prévue'} pendant la fermeture de ${venueName(d)}. Pour chacune, choisissez : annuler et rembourser, ou garder.`,
+            };
+        },
+        sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Chez Fatou, cuisine du Sénégal et grillades', closure_id: SAMPLE_ID.reservation, count: 3, starts_at: '2026-12-05T12:00', ends_at: '2026-12-05T15:00' },
+    }),
+    ORDER_PAUSE_ENDED: define('ORDER_PAUSE_ENDED', {
+        label: 'Fin de la pause des commandes', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: () => '/partner/orders',
+        inApp: (d) => ({ title: 'Commandes reprises', content: `La pause est finie : ${venueName(d)} reçoit de nouveau des commandes.` }),
+        sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Chez Fatou, cuisine du Sénégal et grillades', paused_until: '2026-12-05T13:30:00Z' },
+    }),
+    ADMIN_ORDER_ABSENT: define('ADMIN_ORDER_ABSENT', {
+        label: 'Absence d’un client à décider', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'refunds.manage', inAppType: 'ORDER',
+        link: (d) => `/admin/orders/${ident(d, 'order_id')}`,
+        inApp: (d) => ({
+            title: 'Absence à décider',
+            content: `Le client de la commande ${orderRef(d)} chez ${venueName(d)} est resté absent à la livraison. Décidez : rembourser tout, une part, ou rien.`,
+        }),
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'ADMIN', state: 'EN_ROUTE' },
+    }),
+    ADMIN_ORDER_ISSUE: define('ADMIN_ORDER_ISSUE', {
+        label: 'Problème signalé sur une commande', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'refunds.manage', inAppType: 'ORDER',
+        link: () => '/admin/orders?groupe=A_DECIDER',
+        inApp: (d) => ({
+            title: 'Signalements à traiter',
+            content: `Un client signale ${orderIssueReason(d)} sur la commande ${orderRef(d)}. D’autres signalements peuvent attendre : ouvrez la liste « À décider ».`,
+        }),
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'ADMIN', state: 'EN_PREPARATION', reason: 'INCOMPLETE' },
+    }),
     // Lot 12c : produit « à vérifier » (un mot de la liste dans son nom, sa description ou un supplément) : administrateurs
     // qui ont partners.validate, cloche et email ; décision envoyée à la partenaire (cloche, notification du téléphone, email)
     ADMIN_PRODUCT_REVIEW: define('ADMIN_PRODUCT_REVIEW', {
@@ -3214,6 +3349,16 @@ function orderModeText(d: object): string {
         return spot ? `Sur place (${spot})` : 'Sur place';
     }
     return 'Retrait';
+}
+
+/** Lot 12d : motif d'un signalement en mots (« un retard », « une commande incomplète », « une erreur… », « un problème »). */
+function orderIssueReason(d: object): string {
+    const r = text(d, 'reason');
+    if (r === 'RETARD') return 'un retard';
+    if (r === 'INCOMPLETE') return 'une commande incomplète';
+    if (r === 'ERREUR') return 'une erreur dans la commande';
+    if (r === 'AUTRE') return 'un problème';
+    throw new TemplateDataError('reason', 'inconnu (RETARD, INCOMPLETE, ERREUR ou AUTRE attendu)');
 }
 
 /** Lot 12a : remboursement annoncé au client, ou rien. */

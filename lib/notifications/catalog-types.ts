@@ -232,6 +232,20 @@ export interface TemplateData {
     ORDER_PREP_REMINDER: OrderNotifData;
     ORDER_READY_COURIER: OrderNotifData;
     ORDER_SCHEDULED_REMINDER: OrderNotifData;
+    // Lot 12d : livreur (A6, A7), client absent, signalements, fermetures, pause
+    ORDER_COURIER_ANSWERED: { invitation_id: string; accepted: boolean; courier_name?: string | null };
+    ORDER_COURIER_REMOVED: { invitation_id: string; partner_name?: string | null };
+    ORDER_COURIER_RETURN: OrderNotifData;
+    ORDER_CLIENT_ABSENT: OrderNotifData & { wait_until: string };
+    ORDER_CLIENT_ABSENT_PRO: OrderNotifData & { wait_until: string };
+    ORDER_ABSENCE_DECIDED: OrderNotifData & OrderCancelData & { decision?: 'TOUT' | 'PART' | 'RIEN' | string };
+    ORDER_ABSENCE_DECIDED_PRO: OrderNotifData & OrderCancelData & { decision?: 'TOUT' | 'PART' | 'RIEN' | string };
+    ORDER_ISSUE_PRO: OrderNotifData & { reason: 'RETARD' | 'INCOMPLETE' | 'ERREUR' | 'AUTRE' | string };
+    ORDER_ISSUE_CLOSED: OrderNotifData & { reason: 'RETARD' | 'INCOMPLETE' | 'ERREUR' | 'AUTRE' | string };
+    ORDER_CLOSURE_ORDERS: { venue_id: string; venue_name?: string | null; closure_id: string; count: number; starts_at: string; ends_at: string };
+    ORDER_PAUSE_ENDED: { venue_id: string; venue_name?: string | null; paused_until: string };
+    ADMIN_ORDER_ABSENT: OrderNotifData;
+    ADMIN_ORDER_ISSUE: OrderNotifData & { reason: 'RETARD' | 'INCOMPLETE' | 'ERREUR' | 'AUTRE' | string };
     // Lot 12c : produit « à vérifier » (order_product_save, product_option_set) et décision (order_product_regulation_decide)
     ADMIN_PRODUCT_REVIEW: { product_id: string; product_name: string; venue_name?: string | null; company?: string | null; words: string[] };
     PRODUCT_REVIEW_DECIDED: { product_id: string; product_name: string; decision: 'AUTORISE' | 'REFUSE' | 'A_VERIFIER' | string; reason?: string | null; partner_box?: boolean };

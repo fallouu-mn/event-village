@@ -72,7 +72,23 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        const profile = { ...userData, roles, ...(scannerOpen === undefined ? {} : { scanner_open: scannerOpen, scanner_next_change_at: scannerNextChange }) };
+        // Lot 12d : livreur ACTIF d'au moins une équipe (fiche de la partenaire VALIDE) : la coquille affiche « Mes
+        // livraisons » depuis ce profil déjà lu (aucun module ni appel de plus au premier chargement). Champ absent sinon.
+        const { data: courierRows, error: courierErr } = await supabase
+            .from('partner_couriers')
+            .select('id, partners!inner(status)')
+            .eq('user_id', user.id)
+            .eq('status', 'ACTIVE')
+            .eq('partners.status', 'VALIDE')
+            .limit(1);
+        if (courierErr) console.error('[API /api/auth/me] livreur :', courierErr.message);
+        const courierActive = !courierErr && Array.isArray(courierRows) && courierRows.length > 0;
+
+        const profile = {
+            ...userData, roles,
+            ...(scannerOpen === undefined ? {} : { scanner_open: scannerOpen, scanner_next_change_at: scannerNextChange }),
+            ...(courierActive ? { courier_active: true } : {}),
+        };
         const adminPermissions = await loadAdminPermissions(user.id, roles);
 
         return NextResponse.json({

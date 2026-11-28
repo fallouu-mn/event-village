@@ -44,11 +44,21 @@ async function handleCron(req: NextRequest) {
         } else {
             console.log(`[Cron Commandes] rappels : ${rem.response_reminders ?? 0} réponse(s), ${rem.prep_reminders ?? 0} préparation(s), ${rem.scheduled_reminders ?? 0} client(s).`);
         }
+        // Lot 12d : attente de 30 minutes d'un client absent échue → décision de l'équipe ; fin d'une pause des commandes →
+        // l'établissement prévenu (order_watch_tick, idempotente). Un échec n'empêche pas le reste (journalisé).
+        const watch = await getServiceRoleClient().rpc('order_watch_tick');
+        const w = (watch.data ?? {}) as { absences_escalated?: number; pauses_ended?: number };
+        if (watch.error) {
+            console.error('[Cron Commandes] absences et pauses :', watch.error.message);
+        } else {
+            console.log(`[Cron Commandes] ${w.absences_escalated ?? 0} absence(s) à décider, ${w.pauses_ended ?? 0} pause(s) finie(s).`);
+        }
         return NextResponse.json({
             success: true, expiredHolds: r.expired_holds, unanswered: r.unanswered, pickupWarnings: r.pickup_warnings,
             notCollected: r.not_collected, contactsMasked: r.contacts_masked,
             responseReminders: rem.response_reminders ?? 0, prepReminders: rem.prep_reminders ?? 0, scheduledReminders: rem.scheduled_reminders ?? 0,
             remindersFailed: reminders.error ? true : undefined,
+            absencesEscalated: w.absences_escalated ?? 0, pausesEnded: w.pauses_ended ?? 0, watchFailed: watch.error ? true : undefined,
         });
     } catch (err: unknown) {
         console.error('[Cron Commandes] erreur :', err instanceof Error ? err.message : String(err));

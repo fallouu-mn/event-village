@@ -7,6 +7,30 @@ import { UUID_RE, invalidBody, orderRefusal, readJson } from '@/lib/orders/booki
 
 export const dynamic = 'force-dynamic';
 
+const invitationNotFound = (): NextResponse =>
+    NextResponse.json({ success: false, error: 'Invitation introuvable.', code: 'INVITATION_NOT_FOUND' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+
+/**
+ * GET /api/courier/invitations/[id] — lot 12d : une invitation adressée au compte de la session (établissement, état,
+ * heure ; order_courier_invitation_view) ; toute autre : 404.
+ */
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    try {
+        const activeSession = await requireActiveSession(request);
+        if (activeSession.response) return activeSession.response;
+        const closed = await guardFeature('orders', 'GET /api/courier/invitations/[id]');
+        if (closed) return closed;
+        const { id } = await params;
+        if (!UUID_RE.test(id)) return invitationNotFound();
+        const { data, error } = await getServiceRoleClient().rpc('order_courier_invitation_view', { p: { actor_id: activeSession.user.id, invitation_id: id } });
+        if (error) throw new Error(`order_courier_invitation_view : ${error.message}`);
+        if (!data) return invitationNotFound();
+        return NextResponse.json({ success: true, invitation: data }, { headers: { 'Cache-Control': 'no-store' } });
+    } catch (error: unknown) {
+        return apiFailure('GET /api/courier/invitations/[id]', error, { message: 'Invitation momentanément indisponible.', code: 'COURIER_INVITATION_UNAVAILABLE', status: 500 });
+    }
+}
+
 /**
  * POST /api/courier/invitations/[id] { accept: true | false } — le compte de la session accepte ou refuse de livrer pour
  * une partenaire (order_courier_respond) ; seule l'invitation qui lui est adressée.

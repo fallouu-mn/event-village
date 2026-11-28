@@ -29,6 +29,8 @@ export const ORDER_STATE_LABELS: Readonly<Record<string, string>> = {
 
 export function orderStateLabel(state: unknown, mode?: unknown): string {
     if (state === 'REMISE') return mode === 'LIVRAISON' ? 'Livrée' : mode === 'SUR_PLACE' ? 'Servie' : 'Retirée';
+    // Lot 12d : une livraison close « non retirée » est une absence du client décidée par l'équipe
+    if (state === 'NON_RETIREE' && mode === 'LIVRAISON') return 'Client absent';
     return typeof state === 'string' && ORDER_STATE_LABELS[state] ? ORDER_STATE_LABELS[state] : 'État inconnu';
 }
 
@@ -65,6 +67,9 @@ export function orderRefusalStatus(code: unknown): number {
         case 'INVITATION_NOT_FOUND':
         case 'ACCOUNT_NOT_FOUND':
         case 'SERVICE_CLOSED':
+        // Lot 12d
+        case 'CLOSURE_NOT_FOUND':
+        case 'ISSUE_NOT_FOUND':
             return 404;
         case 'ACCOUNT_NOT_ACTIVE':
         case 'FORBIDDEN':
@@ -77,6 +82,8 @@ export function orderRefusalStatus(code: unknown): number {
         case 'TOO_MANY_CODES':
         case 'TOO_MANY_PORTIONS':
         case 'TOO_MANY_INVITES':
+        // Lot 12d
+        case 'TOO_MANY_ISSUES':
             return 429;
         case 'INVALID_ITEM':
         case 'INVALID_QUANTITY':
@@ -104,6 +111,13 @@ export function orderRefusalStatus(code: unknown): number {
         case 'REASON_REQUIRED':
         case 'OPERATOR_REQUIRED':
         case 'REGULATED_PRODUCT':
+        // Lot 12d
+        case 'INVALID_REASON':
+        case 'DETAILS_REQUIRED':
+        case 'INVALID_PERCENT':
+        case 'INVALID_ALLERGENS':
+        case 'INVALID_SPICE':
+        case 'INVALID_FILTER':
             return 400;
         default:
             return 409;
@@ -113,7 +127,8 @@ export function orderRefusalStatus(code: unknown): number {
 /** Réponse d'un refus de la base : message en français simple, code pour l'écran, statut HTTP. */
 export function orderRefusal(r: Record<string, unknown> | null | undefined, fallback: string): NextResponse {
     const body: Record<string, unknown> = { success: false, error: r?.message ?? fallback, code: r?.code };
-    for (const k of ['product_id', 'minimum', 'balance_due', 'attempts_left', 'payment_id']) {
+    // Lot 12d : refund_amount (montant rendu changé), calls (appels comptés), paused_until (fin de la pause)
+    for (const k of ['product_id', 'minimum', 'balance_due', 'attempts_left', 'payment_id', 'refund_amount', 'calls', 'paused_until']) {
         if (r && r[k] !== undefined) body[k] = r[k];
     }
     return NextResponse.json(body, { status: orderRefusalStatus(r?.code), headers: { 'Cache-Control': 'no-store' } });

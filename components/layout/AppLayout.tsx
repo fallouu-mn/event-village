@@ -229,6 +229,12 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Scanner les billets', href: '/controller/scanner', icon: QrCode });
   }
 
+  // Lot 12d : « Mes livraisons » pour un livreur actif, depuis le profil déjà lu (/api/auth/me : courier_active) ; icône
+  // déjà importée, aucun module de plus ; masquée service des commandes fermé
+  if (mounted && profile?.courier_active === true) {
+    proItems.push(...visibleItems([{ name: 'Mes livraisons', href: '/courier/orders', icon: ShoppingBag, feature: 'orders' }]));
+  }
+
   if (!isPartner && !isAdmin && !isController) {
     proItems.push({ name: 'Devenir partenaire', href: '/partner/register', icon: Briefcase });
   }

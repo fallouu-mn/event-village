@@ -41,6 +41,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const body = await readJson(request);
         if (!body) return invalidBody();
         const action = typeof body.action === 'string' ? body.action.trim().toUpperCase() : '';
+        // Lot 12d : APPEL (appel du client compté) et ABSENT (client absent après deux appels) par order_delivery_step
+        if (action === 'APPEL' || action === 'ABSENT') {
+            const step = await getServiceRoleClient().rpc('order_delivery_step', { p: { order_id: id, actor_id: activeSession.user.id, as: 'COURIER', action } });
+            if (step.error) throw new Error(`order_delivery_step : ${step.error.message}`);
+            const s = step.data as Record<string, unknown>;
+            if (s?.ok !== true) return orderRefusal(s, 'Action impossible pour le moment.');
+            return NextResponse.json({ success: true, order: { id, calls: s.calls ?? null, counted: s.counted ?? null, absentWaitUntil: s.wait_until ?? null } });
+        }
         if (action !== 'EN_ROUTE' && action !== 'REMETTRE') {
             return NextResponse.json({ success: false, error: 'Action inconnue.', code: 'INVALID_ACTION' }, { status: 400 });
         }
