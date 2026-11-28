@@ -244,7 +244,7 @@ for (const theme of THEMES) {
                         });
                         const p = await context.newPage();
                         const watch = watchHydration(p);
-                        for (let passage = 1; passage <= 2; passage += 1) {
+                        for (let passage = 1; passage <= 3; passage += 1) {
                             const mark = watch.mark();
                             if (passage === 1) await p.goto(lc.path(), { waitUntil: 'load' });
                             else await p.reload({ waitUntil: 'load' });
@@ -253,7 +253,7 @@ for (const theme of THEMES) {
                             const errors = watch.since(mark);
                             if (errors.length > 0) {
                                 const report = formatProbe(await readProbe(p));
-                                failures.push(`${theme} · ${vp.id} px · ${lc.id} (${lc.role}) · morceaux de page retardés de ${delay} ms · chargement ${passage}/2 :\n  ${errors.join('\n  ')}${report ? `\n${report}` : ''}`);
+                                failures.push(`${theme} · ${vp.id} px · ${lc.id} (${lc.role}) · morceaux de page retardés de ${delay} ms · chargement ${passage}/3 :\n  ${errors.join('\n  ')}${report ? `\n${report}` : ''}`);
                             }
                         }
                     } finally {

@@ -130,23 +130,49 @@ function probe(): void {
         }
         return false;
     };
+    /**
+     * Endroit de l'écart. React rattache un nœud à son composant à la FIN de son sous-arbre (de bas en haut) : au moment de
+     * l'erreur, les sous-arbres déjà hydratés portent la clé, le reste non. L'écart est donc juste après le DERNIER nœud
+     * rattaché dans l'ordre du document. Un texte enfant unique d'un élément n'est jamais rattaché (texte de l'élément) :
+     * il n'est pas candidat.
+     */
     const scan = (): Array<Record<string, string>> => {
         const out: Array<Record<string, string>> = [];
         if (!document.body) return out;
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | NodeFilter.SHOW_COMMENT);
+        const nodes: Node[] = [];
         let n: Node | null;
-        while ((n = walker.nextNode()) && out.length < 6) {
+        while ((n = walker.nextNode())) {
             if (n.nodeType === 3 && !/\S/.test(String(n.nodeValue))) continue;
-            if (ignored(n) || fiberKey(n)) continue;
-            const parent = n.parentNode;
-            if (!parent || (parent !== document.body && !fiberKey(parent))) continue;
+            if (!ignored(n)) nodes.push(n);
+        }
+        let last = -1;
+        for (let i = 0; i < nodes.length; i += 1) if (fiberKey(nodes[i])) last = i;
+        const children = (p: Node | null): string => (p ? Array.from(p.childNodes)
+            .filter((c) => !(c.nodeType === 3 && !/\S/.test(String(c.nodeValue))))
+            .slice(0, 20)
+            .map((c) => `${desc(c).slice(0, 70)}${fiberKey(c) ? ' ✓' : ''}`)
+            .join(' | ') : '');
+        if (last >= 0) {
+            const lf = nodes[last];
             out.push({
-                noeud: desc(n),
-                chemin: pathOf(n),
-                avant: desc(n.previousSibling),
-                html: n.nodeType === 1 ? (n as Element).outerHTML.slice(0, 400) : String(n.nodeValue).slice(0, 200),
-                composants: fiberChain(parent),
+                noeud: `dernier nœud rattaché : ${desc(lf)}`,
+                chemin: pathOf(lf),
+                avant: desc(lf.previousSibling),
+                html: lf.nodeType === 1 ? (lf as Element).outerHTML.slice(0, 300) : String(lf.nodeValue).slice(0, 200),
+                composants: fiberChain(lf),
             });
+            for (const next of nodes.slice(last + 1).filter((x) => !(x.nodeType === 3 && x.parentNode?.childNodes.length === 1)).slice(0, 3)) {
+                out.push({
+                    noeud: `suivant (non rattaché) : ${desc(next)}`,
+                    chemin: pathOf(next),
+                    avant: desc(next.previousSibling),
+                    html: next.nodeType === 1 ? (next as Element).outerHTML.slice(0, 500) : String(next.nodeValue).slice(0, 200),
+                    composants: `enfants du parent (✓ = rattaché) : ${children(next.parentNode)} ;; composants du parent : ${fiberChain(next.parentNode)}`,
+                });
+            }
+        } else {
+            out.push({ noeud: 'aucun nœud rattaché', chemin: '', avant: '', html: '', composants: `enfants de body : ${children(document.body)}` });
         }
         return out;
     };
@@ -230,7 +256,7 @@ export function formatProbe(report: ProbeReport): string {
         lines.push(`  écart à ${String(m.t)} ms : ${String(m.message ?? m.erreurSonde ?? '')}`);
         lines.push(`    pile : ${String(m.pile ?? '')}`);
         for (const c of (m.candidats as Array<Record<string, string>> | undefined) ?? []) {
-            lines.push(`    nœud non hydraté : ${c.noeud}`);
+            lines.push(`    ${c.noeud}`);
             lines.push(`      chemin : ${c.chemin}`);
             lines.push(`      précédé de : ${c.avant}`);
             lines.push(`      html : ${c.html}`);
