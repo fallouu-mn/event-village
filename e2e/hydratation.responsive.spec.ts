@@ -223,6 +223,56 @@ const LATE_PAGES: LateCase[] = [
 ];
 const LATE_DELAYS = [600, 2_500] as const;
 
+/**
+ * Rechargements répétés des pages connectées, morceaux de page retardés (run 796 : les deux n° 418 reproduits l'ont été au
+ * rechargement, sur /orders et /partner/dashboard ; run 800 : aucun sur 144 chargements). Sans le verrou des services (les
+ * autres tests ne l'attendent pas) : interrupteurs dans l'état du moment.
+ */
+const RELOAD_PAGES = LATE_PAGES.filter((p) => p.role !== 'anonyme');
+const RELOAD_DELAYS = [600, 1_200, 2_500] as const;
+const RELOADS = 8;
+
+for (const theme of THEMES) {
+    for (const vp of VIEWPORTS) {
+        test(`hydratation · ${theme} · ${vp.id} px · rechargements répétés, page tardive : tableau de bord et calendrier de l'organisatrice, commandes du client`, async ({ browser }, testInfo) => {
+            test.setTimeout(900_000);
+            const failures: string[] = [];
+            let loads = 0;
+            for (const lc of RELOAD_PAGES) {
+                for (const delay of RELOAD_DELAYS) {
+                    const context = await openRoleContext(browser, testInfo, lc.role as 'organisateur' | 'client', theme, { ...vp.options, timezoneId: BROWSER_TZ });
+                    try {
+                        await installHydrationProbe(context);
+                        await context.route(LATE_PAGE_CHUNK, async (route) => {
+                            await new Promise((r) => setTimeout(r, delay));
+                            await route.fallback();
+                        });
+                        const p = await context.newPage();
+                        const watch = watchHydration(p);
+                        for (let passage = 1; passage <= RELOADS; passage += 1) {
+                            const mark = watch.mark();
+                            if (passage === 1) await p.goto(lc.path(), { waitUntil: 'load' });
+                            else await p.reload({ waitUntil: 'load' });
+                            await waitHydrated(p, lc.ready);
+                            loads += 1;
+                            const errors = watch.since(mark);
+                            if (errors.length > 0) {
+                                const report = formatProbe(await readProbe(p));
+                                failures.push(`${theme} · ${vp.id} px · ${lc.id} (${lc.role}) · morceaux de page retardés de ${delay} ms · chargement ${passage}/${RELOADS} :\n  ${errors.join('\n  ')}${report ? `\n${report}` : ''}`);
+                            }
+                        }
+                    } finally {
+                        await context.close();
+                    }
+                }
+            }
+            console.log(`[hydratation] rechargements répétés · ${theme} · ${vp.id} px : ${loads} chargements, ${failures.length} en échec`);
+            for (const f of failures) console.log(`[hydratation] ÉCHEC ${f}`);
+            expect(failures, `erreurs d'hydratation, rechargements répétés (${theme}, ${vp.id} px)`).toEqual([]);
+        });
+    }
+}
+
 for (const theme of THEMES) {
     for (const vp of VIEWPORTS) {
         test(`hydratation · ${theme} · ${vp.id} px · page tardive, services ouverts : accueil, Explorer, fiche, tableau de bord et calendrier de l'organisatrice, commandes du client`, async ({ browser, servicesLock }, testInfo) => {
